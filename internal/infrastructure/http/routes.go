@@ -33,8 +33,6 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 		documents := protected.Group("/documents")
 		{
 			documents.POST("/upload", deps.DocumentHandler.Upload)
-			documents.GET("", deps.DocumentHandler.List)
-			documents.GET("/:id", deps.DocumentHandler.Get)
 		}
 	}
 

@@ -5,94 +5,92 @@ import (
 	"fmt"
 	"io"
 
+	apperrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+
 	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
 	"github.com/awakeelectronik/sumabitcoin-backend/internal/domain"
-	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
-type UploadDocumentInput struct {
-	UserID   string
-	FileName string
-	File     io.Reader
-	FileSize int64
-	MimeType string
-}
-
-type UploadDocumentOutput struct {
-	DocumentID string `json:"document_id"`
-	FileName   string `json:"file_name"`
-	Status     string `json:"status"`
-}
-
 type UploadDocumentUseCase struct {
-	docRepo     application.DocumentRepository
-	fileStorage application.FileStorage
-	maxFileSize int64
-	logger      *logrus.Logger
+	documentRepo application.DocumentRepository
+	fileStorage  application.FileStorage
+	maxFileSize  int64
+	logger       *logrus.Logger
 }
 
 func NewUploadDocumentUseCase(
-	docRepo application.DocumentRepository,
+	documentRepo application.DocumentRepository,
 	fileStorage application.FileStorage,
 	maxFileSize int64,
 	logger *logrus.Logger,
 ) *UploadDocumentUseCase {
 	return &UploadDocumentUseCase{
-		docRepo:     docRepo,
-		fileStorage: fileStorage,
-		maxFileSize: maxFileSize,
-		logger:      logger,
+		documentRepo: documentRepo,
+		fileStorage:  fileStorage,
+		maxFileSize:  maxFileSize,
+		logger:       logger,
 	}
 }
 
-func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocumentInput) (*UploadDocumentOutput, error) {
-	uc.logger.WithFields(logrus.Fields{
-		"user_id":   input.UserID,
-		"file_name": input.FileName,
-		"file_size": input.FileSize,
-		"mime_type": input.MimeType,
-		"action":    "upload_document",
-	}).Info("Document upload started")
-
-	// Validate file size
-	if input.FileSize > uc.maxFileSize {
-		err := appErrors.NewValidationError("file_size", fmt.Sprintf("Max %d bytes", uc.maxFileSize))
-		uc.logger.WithError(err).Warn("File size validation failed")
-		return nil, err
+func (u *UploadDocumentUseCase) Execute(
+	ctx context.Context,
+	userID string,
+	fileName string,
+	file io.Reader,
+	fileSize int64,
+	mimeType string,
+) (*domain.Document, error) {
+	// Validaciones
+	if fileSize > u.maxFileSize {
+		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", fileSize, u.maxFileSize)
 	}
 
-	// Validate MIME type
-	if input.MimeType != "image/jpeg" && input.MimeType != "image/jpg" {
-		err := appErrors.NewValidationError("mime_type", "Only JPG files allowed")
-		uc.logger.WithError(err).Warn("MIME type validation failed")
-		return nil, err
-	}
-
-	// Save file
-	fileName := fmt.Sprintf("%s_%s", input.UserID, input.FileName)
-	filePath, err := uc.fileStorage.Save(ctx, fileName, input.File, input.FileSize)
+	// ✅ CAMBIO: Pasar userID al Save
+	storedPath, originalName, err := u.fileStorage.Save(
+		ctx,
+		userID, // ← Nueva carpeta por usuario
+		fileName,
+		file,
+		fileSize,
+	)
 	if err != nil {
-		uc.logger.WithError(err).Error("File storage failed")
-		return nil, appErrors.NewAppErrorWithInternal("STORAGE_ERROR", "Error saving document", 500, err)
+		u.logger.WithError(err).Error("Failed to save file")
+		return nil, fmt.Errorf("failed to save file: %w", err)
 	}
 
-	// Create database record
-	doc := domain.NewDocument(input.UserID, input.FileName, filePath, input.MimeType, input.FileSize)
-	if err := uc.docRepo.Create(ctx, doc); err != nil {
-		_ = uc.fileStorage.Delete(ctx, filePath)
-		uc.logger.WithError(err).Error("Failed to save document record")
-		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error saving document reference", 500, err)
+	// Crear documento
+	doc := &domain.Document{
+		ID:       uuid.NewString(),
+		UserID:   userID,
+		FileName: originalName, // ← Nombre original para el usuario
+		FilePath: storedPath,   // ← Path único en disco
+		FileSize: fileSize,
+		MimeType: mimeType,
+		Status:   "pending",
 	}
 
-	uc.logger.WithFields(logrus.Fields{
-		"document_id": doc.ID,
-		"user_id":     input.UserID,
+	// Guardar en BD
+	if err := u.documentRepo.Create(ctx, doc); err != nil {
+		u.logger.WithError(err).Error("Failed to create document record")
+		// Limpiar archivo si falla el registro BD
+		// Si el error de la aplicación contiene un error interno (por ejemplo MySQL),
+		// envolver y devolver ese error interno para que la consola muestre el detalle.
+		if appErr, ok := err.(*apperrors.AppError); ok {
+			if appErr.Internal != nil {
+				return nil, fmt.Errorf("failed to create document: %w", appErr.Internal)
+			}
+		}
+		return nil, fmt.Errorf("failed to create document: %w", err)
+	}
+
+	u.logger.WithFields(logrus.Fields{
+		"document_id":   doc.ID,
+		"user_id":       userID,
+		"original_name": originalName,
+		"stored_path":   storedPath,
 	}).Info("Document uploaded successfully")
 
-	return &UploadDocumentOutput{
-		DocumentID: doc.ID,
-		FileName:   doc.FileName,
-		Status:     string(doc.Status),
-	}, nil
+	return doc, nil
 }

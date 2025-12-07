@@ -22,13 +22,13 @@ func (r *DocumentRepository) Create(ctx context.Context, doc *domain.Document) e
 	metadataJSON, _ := json.Marshal(doc.Metadata)
 
 	query := `
-		INSERT INTO documents (id, user_id, file_name, file_path, file_size, mime_type, status, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO documents (id, user_id, file_name, file_path, file_size, mime_type, status, metadata)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
 		doc.ID, doc.UserID, doc.FileName, doc.FilePath, doc.FileSize,
-		doc.MimeType, doc.Status, metadataJSON, doc.CreatedAt, doc.UpdatedAt,
+		doc.MimeType, doc.Status, metadataJSON,
 	)
 
 	if err != nil {

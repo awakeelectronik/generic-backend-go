@@ -29,8 +29,14 @@ type DocumentRepository interface {
 // === STORAGE ===
 
 type FileStorage interface {
-	Save(ctx context.Context, fileName string, file io.Reader, size int64) (filePath string, err error)
-	Delete(ctx context.Context, filePath string) error
+	// Save guarda un archivo y retorna (storedPath, originalName, error)
+	Save(
+		ctx context.Context,
+		userID string,
+		fileName string,
+		file io.Reader,
+		size int64,
+	) (string, string, error)
 	Get(ctx context.Context, filePath string) (io.ReadCloser, error)
 	GetURL(filePath string) string
 }
