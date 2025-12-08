@@ -4,13 +4,22 @@ import (
 	"context"
 
 	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
+	"github.com/awakeelectronik/sumabitcoin-backend/internal/domain"
 	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 type LoginInput struct {
-	Email    string `json:"email" binding:"required,email"`
+	Email    string `json:"email" binding:"omitempty,email"`
+	Phone    string `json:"phone" binding:"omitempty"`
 	Password string `json:"password" binding:"required"`
+}
+
+func (li LoginInput) Validate() error {
+	if li.Email == "" && li.Phone == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "either email or phone is required", 400)
+	}
+	return nil
 }
 
 type LoginOutput struct {
@@ -42,18 +51,27 @@ func NewLoginUseCase(
 }
 
 func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOutput, error) {
-	uc.logger.WithField("email", input.Email).Info("Login attempt")
+	uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Info("Login attempt")
 
-	// Find user
-	user, err := uc.userRepo.GetByEmail(ctx, input.Email)
+	// Find user by email or phone
+	var user *domain.User
+	var err error
+
+	// prefer email if provided
+	if input.Email != "" {
+		user, err = uc.userRepo.GetByEmail(ctx, input.Email)
+	} else if input.Phone != "" {
+		user, err = uc.userRepo.GetByPhone(ctx, input.Phone)
+	}
+
 	if err != nil || user == nil {
-		uc.logger.WithField("email", input.Email).Warn("Login failed: user not found")
+		uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Warn("Login failed: user not found")
 		return nil, appErrors.ErrUnauthorized
 	}
 
 	// Verify password
 	if err := uc.passwordHasher.Compare(user.Password, input.Password); err != nil {
-		uc.logger.WithField("email", input.Email).Warn("Login failed: invalid password")
+		uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Warn("Login failed: invalid password")
 		return nil, appErrors.ErrUnauthorized
 	}
 

@@ -67,6 +67,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if err := req.Validate(); err != nil {
+		if appErr, ok := err.(*appErrors.AppError); ok {
+			ErrorResponse(c, appErr.StatusCode, appErr.Code, appErr.Message)
+		} else {
+			ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		}
+		return
+	}
+
 	output, err := h.loginUC.Execute(c.Request.Context(), req)
 	if err != nil {
 		HandleError(c, err)

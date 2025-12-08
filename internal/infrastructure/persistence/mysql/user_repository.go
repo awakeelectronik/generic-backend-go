@@ -101,6 +101,39 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 	return &user, nil
 }
 
+func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*domain.User, error) {
+	query := `
+		SELECT id, email, password, name, phone, verified, created_at, updated_at, deleted_at
+		FROM users WHERE phone = ? AND deleted_at IS NULL
+	`
+
+	var user domain.User
+	var deletedAt sql.NullTime
+	var phone sql.NullString
+
+	err := r.db.QueryRowContext(ctx, query, phoneQuery).Scan(
+		&user.ID, &user.Email, &user.Password, &user.Name, &phone,
+		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching user", 500, err)
+	}
+
+	if phone.Valid {
+		user.Phone = phone.String
+	}
+
+	if deletedAt.Valid {
+		user.DeletedAt = &deletedAt.Time
+	}
+
+	return &user, nil
+}
+
 func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 	query := `
 		UPDATE users 

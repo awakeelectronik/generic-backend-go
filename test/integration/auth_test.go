@@ -137,7 +137,7 @@ func TestAuthLogin(t *testing.T) {
 	ts.ClearTables()
 
 	// Crear usuario primero (inserta con contraseña en texto plano y se hashea internamente)
-	if err := ts.InsertTestUser("user-123", "login@example.com", "password123"); err != nil {
+	if err := ts.InsertTestUserWithPhone("user-123", "login@example.com", "+573001234567", "password123"); err != nil {
 		t.Fatalf("failed to insert test user: %v", err)
 	}
 	// Verificar que el repo puede obtener al usuario
@@ -153,6 +153,7 @@ func TestAuthLogin(t *testing.T) {
 	tests := []struct {
 		name            string
 		email           string
+		phone           string
 		password        string
 		expectedStatus  int
 		shouldHaveToken bool
@@ -160,6 +161,7 @@ func TestAuthLogin(t *testing.T) {
 		{
 			name:            "Login successful",
 			email:           "login@example.com",
+			phone:           "",
 			password:        "password123",
 			expectedStatus:  http.StatusOK,
 			shouldHaveToken: true,
@@ -174,9 +176,18 @@ func TestAuthLogin(t *testing.T) {
 		{
 			name:            "Login user not found",
 			email:           "notfound@example.com",
+			phone:           "",
 			password:        "password123",
 			expectedStatus:  http.StatusUnauthorized,
 			shouldHaveToken: false,
+		},
+		{
+			name:            "Login by phone",
+			email:           "",
+			phone:           "+573001234567",
+			password:        "password123",
+			expectedStatus:  http.StatusOK,
+			shouldHaveToken: true,
 		},
 	}
 
@@ -184,6 +195,7 @@ func TestAuthLogin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			payload := map[string]string{
 				"email":    tt.email,
+				"phone":    tt.phone,
 				"password": tt.password,
 			}
 			body, _ := json.Marshal(payload)

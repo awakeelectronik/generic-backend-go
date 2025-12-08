@@ -173,3 +173,34 @@ func (ts *TestServer) InsertTestUser(userID, email, password string) error {
 
 	return nil
 }
+
+// InsertTestUserWithPhone crea un usuario de prueba con teléfono
+func (ts *TestServer) InsertTestUserWithPhone(userID, email, phone, password string) error {
+	query := `
+		INSERT INTO users (id, email, password, name, phone, verified, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())
+	`
+	// Hash password before inserting (tests may pass plain password)
+	hashed := password
+	if ts.PasswordHasher != nil {
+		if h, err := ts.PasswordHasher.Hash(password); err == nil {
+			hashed = h
+		}
+	}
+
+	res, err := ts.DB.DB.Exec(query, userID, email, hashed, "Test User", phone)
+	if err != nil {
+		if ts.Logger != nil {
+			ts.Logger.WithError(err).WithFields(logrus.Fields{"user_id": userID, "email": email}).Error("InsertTestUserWithPhone failed")
+		}
+		return err
+	}
+
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		if ts.Logger != nil {
+			ts.Logger.WithFields(logrus.Fields{"user_id": userID, "email": email}).Warn("InsertTestUserWithPhone affected 0 rows")
+		}
+	}
+
+	return nil
+}
