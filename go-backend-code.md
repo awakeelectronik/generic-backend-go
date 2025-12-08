@@ -2464,12 +2464,12 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
   }'
 
 # Login
-TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
     "password": "SecurePass123!"
-  }' | jq -r '.data.token')
+  }'
 
 # Subir documento
 curl -X POST http://localhost:8080/api/v1/documents/upload -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMDEwMzhmMGItYWI1NC00M2U1LTgxNzYtOTJhZjNiMzlmOGNkIiwiZW1haWwiOiJ1c2VyMUBleGFtcGxlLmNvbSIsImlzcyI6ImlkZW50aXR5LWFwaSIsImV4cCI6MTc2NTE2MDQxOCwiaWF0IjoxNzY1MDc0MDE4fQ.7te_8oFfTsCqvXQ4Kk6_76o4WTBcoZZs1Sfi-KEtd7A" -F "document=@a.jpeg"
