@@ -21,6 +21,7 @@ func TestAuthRegister(t *testing.T) {
 		payload        map[string]string
 		expectedStatus int
 		expectedField  string
+		shouldHaveData bool
 	}{
 		{
 			name: "Register successful",
@@ -32,16 +33,39 @@ func TestAuthRegister(t *testing.T) {
 			},
 			expectedStatus: http.StatusCreated,
 			expectedField:  "data",
+			shouldHaveData: true,
 		},
 		{
-			name: "Register missing email",
+			name: "Register_with_only_email",
+			payload: map[string]string{
+				"email":    "onlyemail@example.com",
+				"password": "password123",
+				"name":     "Email User",
+			},
+			expectedStatus: http.StatusCreated,
+			expectedField:  "data",
+			shouldHaveData: true,
+		},
+		{
+			name: "Register_with_only_phone",
+			payload: map[string]string{
+				"phone":    "+573009876543",
+				"password": "password123",
+				"name":     "Phone User",
+			},
+			expectedStatus: http.StatusCreated,
+			expectedField:  "data",
+			shouldHaveData: true,
+		},
+		{
+			name: "Register_missing_email_and_phone",
 			payload: map[string]string{
 				"password": "password123",
 				"name":     "John Doe",
-				"phone":    "+573001234567",
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedField:  "code",
+			shouldHaveData: false,
 		},
 		{
 			name: "Register duplicate email",
@@ -51,8 +75,9 @@ func TestAuthRegister(t *testing.T) {
 				"name":     "John Doe",
 				"phone":    "+573001234567",
 			},
-			expectedStatus: http.StatusConflict, // Segundo registro con mismo email
+			expectedStatus: http.StatusConflict,
 			expectedField:  "code",
+			shouldHaveData: false,
 		},
 	}
 
@@ -90,8 +115,9 @@ func TestAuthRegister(t *testing.T) {
 			var resp map[string]interface{}
 			json.Unmarshal(w.Body.Bytes(), &resp)
 
-			if tt.expectedStatus == http.StatusCreated {
-				data, _ := resp["data"].(map[string]interface{})
+			if tt.shouldHaveData {
+				data, ok := resp["data"].(map[string]interface{})
+				assert.True(t, ok, "expected data field to be a map")
 				assert.NotNil(t, data["id"])
 			} else {
 				assert.Equal(t, false, resp["success"])

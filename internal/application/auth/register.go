@@ -10,10 +10,18 @@ import (
 )
 
 type RegisterInput struct {
-	Email    string `json:"email" binding:"required,email"`
+	Email    string `json:"email" binding:"omitempty,email"`
 	Password string `json:"password" binding:"required,min=8"`
 	Name     string `json:"name" binding:"required,min=2"`
-	Phone    string `json:"phone" binding:"required"`
+	Phone    string `json:"phone" binding:"omitempty"`
+}
+
+// Validate checks that at least email or phone is provided
+func (r *RegisterInput) Validate() error {
+	if r.Email == "" && r.Phone == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "either email or phone is required", 400)
+	}
+	return nil
 }
 
 type RegisterOutput struct {
@@ -46,11 +54,13 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 		"action": "register",
 	}).Info("User registration attempt")
 
-	// Check if user exists
-	existing, _ := uc.userRepo.GetByEmail(ctx, input.Email)
-	if existing != nil {
-		uc.logger.WithField("email", input.Email).Warn("Registration failed: email already exists")
-		return nil, appErrors.NewConflictError("Email")
+	// Check if user exists (only if email is provided)
+	if input.Email != "" {
+		existing, _ := uc.userRepo.GetByEmail(ctx, input.Email)
+		if existing != nil {
+			uc.logger.WithField("email", input.Email).Warn("Registration failed: email already exists")
+			return nil, appErrors.NewConflictError("Email")
+		}
 	}
 
 	// Hash password

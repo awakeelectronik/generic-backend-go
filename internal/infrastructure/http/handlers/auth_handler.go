@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/awakeelectronik/sumabitcoin-backend/internal/application/auth"
+	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -35,6 +36,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.WithError(err).Warn("Registration validation error")
 		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	// Validate that at least email or phone is provided
+	if err := req.Validate(); err != nil {
+		if appErr, ok := err.(*appErrors.AppError); ok {
+			ErrorResponse(c, appErr.StatusCode, appErr.Code, appErr.Message)
+		} else {
+			ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		}
 		return
 	}
 
