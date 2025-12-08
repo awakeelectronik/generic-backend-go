@@ -82,11 +82,12 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	refreshUC := authUC.NewRefreshUseCase(tokenProvider, logger)
 
 	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, logger)
+	listDocUC := docUC.NewListDocumentsUseCase(documentRepo, logger)
 
 	// ========== HANDLERS ==========
 	authHandler := handlers.NewAuthHandler(registerUC, loginUC, refreshUC, logger)
 	userHandler := handlers.NewUserHandler(userRepo, logger)
-	documentHandler := handlers.NewDocumentHandler(uploadDocUC, logger)
+	documentHandler := handlers.NewDocumentHandlerWithList(uploadDocUC, listDocUC, logger)
 
 	// ========== RETURN DEPENDENCIES ==========
 	return &Dependencies{

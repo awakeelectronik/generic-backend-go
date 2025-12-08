@@ -66,8 +66,10 @@ func TestGetUserProfile(t *testing.T) {
 			json.Unmarshal(w.Body.Bytes(), &resp)
 
 			if tt.expectedData != nil {
+				// responses are wrapped in `data`
+				data, _ := resp["data"].(map[string]interface{})
 				for key, val := range tt.expectedData {
-					assert.Equal(t, val, resp[key])
+					assert.Equal(t, val, data[key])
 				}
 			}
 		})

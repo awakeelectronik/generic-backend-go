@@ -25,6 +25,7 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 	{
 		users := protected.Group("/users")
 		{
+			users.GET("/profile", deps.UserHandler.GetProfile)
 			users.GET("/:id", deps.UserHandler.GetByID)
 			users.PUT("/:id", deps.UserHandler.Update)
 			users.DELETE("/:id", deps.UserHandler.Delete)
@@ -33,6 +34,7 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 		documents := protected.Group("/documents")
 		{
 			documents.POST("/upload", deps.DocumentHandler.Upload)
+			documents.GET("", deps.DocumentHandler.List)
 		}
 	}
 

@@ -21,11 +21,13 @@ type TestDB struct {
 
 // TestServer contiene router y dependencias
 type TestServer struct {
-	Router        *gin.Engine
-	DB            *TestDB
-	Logger        *logrus.Logger
-	TokenProvider application.TokenProvider
-	TestToken     string // Token JWT válido
+	Router         *gin.Engine
+	DB             *TestDB
+	Logger         *logrus.Logger
+	TokenProvider  application.TokenProvider
+	TestToken      string // Token JWT válido
+	PasswordHasher application.PasswordHasher
+	UserRepo       application.UserRepository
 }
 
 func getenvDefault(key, def string) string {
@@ -83,7 +85,7 @@ func TeardownTestDB(t *testing.T, testDB *TestDB) {
 // SetupTestServer configura el servidor para pruebas
 func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel)
+	logger.SetLevel(logrus.InfoLevel)
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
@@ -96,6 +98,16 @@ func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 			Password: getenvDefault("TEST_DB_PASS", "password"),
 			Name:     getenvDefault("TEST_DB_NAME", "sumabitcointest"),
 		},
+		JWT: config.JWTConfig{
+			Secret:          getenvDefault("TEST_JWT_SECRET", "test-secret"),
+			ExpirationHours: 24,
+			RefreshHours:    168,
+			IssuerName:      getenvDefault("TEST_JWT_ISSUER", "test-issuer"),
+		},
+		Storage: config.StorageConfig{
+			LocalPath:   getenvDefault("TEST_STORAGE_PATH", "./uploads-test"),
+			MaxFileSize: int64(5 * 1024 * 1024),
+		},
 	}
 
 	deps, err := config.BuildDependencies(cfg, logger)
@@ -105,17 +117,19 @@ func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 
 	http.SetupRoutes(router, deps, logger)
 
-	testToken, err := deps.TokenProvider.GenerateToken("test-user-123", "test@example.com")
+	testToken, err := deps.TokenProvider.GenerateToken("user-123", "test@example.com")
 	if err != nil {
 		t.Fatalf("Failed to generate test token: %v", err)
 	}
 
 	return &TestServer{
-		Router:        router,
-		DB:            testDB,
-		Logger:        logger,
-		TokenProvider: deps.TokenProvider,
-		TestToken:     testToken,
+		Router:         router,
+		DB:             testDB,
+		Logger:         logger,
+		TokenProvider:  deps.TokenProvider,
+		PasswordHasher: deps.PasswordHasher,
+		UserRepo:       deps.UserRepo,
+		TestToken:      testToken,
 	}
 }
 
@@ -136,6 +150,26 @@ func (ts *TestServer) InsertTestUser(userID, email, password string) error {
         INSERT INTO users (id, email, password, name, verified, created_at, updated_at)
         VALUES (?, ?, ?, ?, true, NOW(), NOW())
     `
-	_, err := ts.DB.DB.Exec(query, userID, email, password, "Test User")
-	return err
+	// Hash password before inserting (tests may pass plain password)
+	hashed := password
+	if ts.PasswordHasher != nil {
+		if h, err := ts.PasswordHasher.Hash(password); err == nil {
+			hashed = h
+		}
+	}
+	res, err := ts.DB.DB.Exec(query, userID, email, hashed, "Test User")
+	if err != nil {
+		if ts.Logger != nil {
+			ts.Logger.WithError(err).WithFields(logrus.Fields{"user_id": userID, "email": email}).Error("InsertTestUser failed")
+		}
+		return err
+	}
+
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		if ts.Logger != nil {
+			ts.Logger.WithFields(logrus.Fields{"user_id": userID, "email": email}).Warn("InsertTestUser affected 0 rows")
+		}
+	}
+
+	return nil
 }

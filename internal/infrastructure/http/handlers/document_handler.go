@@ -10,6 +10,7 @@ import (
 
 type DocumentHandler struct {
 	uploadUC *document.UploadDocumentUseCase
+	listUC   *document.ListDocumentsUseCase
 	logger   *logrus.Logger
 }
 
@@ -19,6 +20,18 @@ func NewDocumentHandler(
 ) *DocumentHandler {
 	return &DocumentHandler{
 		uploadUC: uploadUC,
+		logger:   logger,
+	}
+}
+
+func NewDocumentHandlerWithList(
+	uploadUC *document.UploadDocumentUseCase,
+	listUC *document.ListDocumentsUseCase,
+	logger *logrus.Logger,
+) *DocumentHandler {
+	return &DocumentHandler{
+		uploadUC: uploadUC,
+		listUC:   listUC,
 		logger:   logger,
 	}
 }
@@ -75,4 +88,27 @@ func (h *DocumentHandler) Upload(c *gin.Context) {
 			"status":      doc.Status,
 		},
 	})
+}
+
+// List devuelve los documentos del usuario autenticado
+func (h *DocumentHandler) List(c *gin.Context) {
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID := userIDInterface.(string)
+
+	// Defaults
+	limit := 10
+	offset := 0
+
+	out, err := h.listUC.Execute(c.Request.Context(), userID, limit, offset)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to list documents")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list documents"})
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, out)
 }

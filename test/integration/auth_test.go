@@ -2,11 +2,13 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -132,9 +134,21 @@ func TestAuthLogin(t *testing.T) {
 	defer TeardownTestDB(t, testDB)
 
 	ts := SetupTestServer(t, testDB)
+	ts.ClearTables()
 
-	// Crear usuario primero
-	ts.InsertTestUser("user-123", "login@example.com", "hashedpassword123")
+	// Crear usuario primero (inserta con contraseña en texto plano y se hashea internamente)
+	if err := ts.InsertTestUser("user-123", "login@example.com", "password123"); err != nil {
+		t.Fatalf("failed to insert test user: %v", err)
+	}
+	// Verificar que el repo puede obtener al usuario
+	if u, err := ts.UserRepo.GetByEmail(context.TODO(), "login@example.com"); err != nil {
+		if ae, ok := err.(*appErrors.AppError); ok && ae.Internal != nil {
+			t.Fatalf("error querying user via repo: %v (internal: %v)", err, ae.Internal)
+		}
+		t.Fatalf("error querying user via repo: %v", err)
+	} else if u == nil {
+		t.Fatalf("user not found via repo after insert")
+	}
 
 	tests := []struct {
 		name            string
@@ -187,7 +201,8 @@ func TestAuthLogin(t *testing.T) {
 			json.Unmarshal(w.Body.Bytes(), &resp)
 
 			if tt.shouldHaveToken {
-				assert.NotNil(t, resp["token"])
+				data, _ := resp["data"].(map[string]interface{})
+				assert.NotNil(t, data["token"])
 			}
 		})
 	}

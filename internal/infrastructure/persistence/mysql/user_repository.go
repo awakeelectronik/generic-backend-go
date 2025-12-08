@@ -43,9 +43,10 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 
 	var user domain.User
 	var deletedAt sql.NullTime
+	var phone sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&user.ID, &user.Email, &user.Password, &user.Name, &user.Phone,
+		&user.ID, &user.Email, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -54,6 +55,10 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 	}
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching user", 500, err)
+	}
+
+	if phone.Valid {
+		user.Phone = phone.String
 	}
 
 	if deletedAt.Valid {
@@ -71,9 +76,10 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 
 	var user domain.User
 	var deletedAt sql.NullTime
+	var phone sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
-		&user.ID, &user.Email, &user.Password, &user.Name, &user.Phone,
+		&user.ID, &user.Email, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -82,6 +88,10 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 	}
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching user", 500, err)
+	}
+
+	if phone.Valid {
+		user.Phone = phone.String
 	}
 
 	if deletedAt.Valid {
@@ -153,13 +163,18 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain
 	for rows.Next() {
 		var user domain.User
 		var deletedAt sql.NullTime
+		var phone sql.NullString
 
 		err := rows.Scan(
-			&user.ID, &user.Email, &user.Password, &user.Name, &user.Phone,
+			&user.ID, &user.Email, &user.Password, &user.Name, &phone,
 			&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
 			return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning user", 500, err)
+		}
+
+		if phone.Valid {
+			user.Phone = phone.String
 		}
 
 		if deletedAt.Valid {

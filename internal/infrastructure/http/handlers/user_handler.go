@@ -62,7 +62,7 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 }
 
 type UpdateUserInput struct {
-	Name  string `json:"name"`
+	Name  string `json:"name" binding:"required,min=2"`
 	Phone string `json:"phone"`
 }
 
@@ -82,6 +82,12 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Extra guard: ensure name is present (some test contexts may not trigger validator)
+	if req.Name == "" {
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", "name is required")
+		return
+	}
+
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
 		HandleError(c, err)
@@ -97,6 +103,26 @@ func (h *UserHandler) Update(c *gin.Context) {
 	}
 
 	h.logger.WithField("user_id", userID).Info("User updated successfully")
+
+	SuccessResponse(c, http.StatusOK, UserOutput{
+		ID:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		Phone:     user.Phone,
+		Verified:  user.Verified,
+		CreatedAt: user.CreatedAt.String(),
+	})
+}
+
+// GetProfile returns the profile of the currently authenticated user
+func (h *UserHandler) GetProfile(c *gin.Context) {
+	currentUserID := c.GetString("user_id")
+
+	user, err := h.userRepo.GetByID(c.Request.Context(), currentUserID)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
 
 	SuccessResponse(c, http.StatusOK, UserOutput{
 		ID:        user.ID,

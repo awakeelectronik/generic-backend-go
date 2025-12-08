@@ -1,3 +1,4 @@
 uploads-suma
 .env
 .env.test
+test/integration/uploads-test/
