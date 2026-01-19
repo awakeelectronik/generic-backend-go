@@ -11,7 +11,7 @@ import (
 
 type LoginInput struct {
 	Email    string `json:"email" binding:"omitempty,email"`
-	Phone    string `json:"phone" binding:"omitempty"`
+	Phone    string `json:"phone" binding:"omitempty,len=10,numeric"`
 	Password string `json:"password" binding:"required"`
 }
 
@@ -73,6 +73,12 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOu
 	if err := uc.passwordHasher.Compare(user.Password, input.Password); err != nil {
 		uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Warn("Login failed: invalid password")
 		return nil, appErrors.ErrUnauthorized
+	}
+
+	// Check if user is verified
+	if !user.Verified {
+		uc.logger.WithFields(logrus.Fields{"user_id": user.ID, "email": input.Email, "phone": input.Phone}).Warn("Login failed: user not verified")
+		return nil, appErrors.NewAppError("UNVERIFIED_USER", "User is not verified. Complete verification first.", 403)
 	}
 
 	// Generate tokens

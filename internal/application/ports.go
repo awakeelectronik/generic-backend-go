@@ -55,3 +55,8 @@ type PasswordHasher interface {
 	Hash(password string) (string, error)
 	Compare(hash, password string) error
 }
+
+type VerificationService interface {
+	SendVerificationCode(userID, destination string) error
+	VerifyCode(userID, code string) error
+}
