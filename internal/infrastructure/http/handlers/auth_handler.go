@@ -10,23 +10,29 @@ import (
 )
 
 type AuthHandler struct {
-	registerUC *auth.RegisterUseCase
-	loginUC    *auth.LoginUseCase
-	refreshUC  *auth.RefreshUseCase
-	logger     *logrus.Logger
+	registerUC          *auth.RegisterUseCase
+	loginUC             *auth.LoginUseCase
+	refreshUC           *auth.RefreshUseCase
+	checkAvailabilityUC *auth.CheckAvailabilityUseCase
+	verifyCodeUC        *auth.VerifyCodeUseCase
+	logger              *logrus.Logger
 }
 
 func NewAuthHandler(
 	registerUC *auth.RegisterUseCase,
 	loginUC *auth.LoginUseCase,
 	refreshUC *auth.RefreshUseCase,
+	checkAvailabilityUC *auth.CheckAvailabilityUseCase,
+	verifyCodeUC *auth.VerifyCodeUseCase,
 	logger *logrus.Logger,
 ) *AuthHandler {
 	return &AuthHandler{
-		registerUC: registerUC,
-		loginUC:    loginUC,
-		refreshUC:  refreshUC,
-		logger:     logger,
+		registerUC:          registerUC,
+		loginUC:             loginUC,
+		refreshUC:           refreshUC,
+		checkAvailabilityUC: checkAvailabilityUC,
+		verifyCodeUC:        verifyCodeUC,
+		logger:              logger,
 	}
 }
 
@@ -97,6 +103,52 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	output, err := h.refreshUC.Execute(c.Request.Context(), req)
 	if err != nil {
 		HandleError(c, err)
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
+}
+
+func (h *AuthHandler) CheckAvailability(c *gin.Context) {
+	var req auth.CheckAvailabilityInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Availability check validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		if appErr, ok := err.(*appErrors.AppError); ok {
+			ErrorResponse(c, appErr.StatusCode, appErr.Code, appErr.Message)
+		} else {
+			ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		}
+		return
+	}
+
+	output, err := h.checkAvailabilityUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
+}
+
+func (h *AuthHandler) VerifyCode(c *gin.Context) {
+	var req auth.VerifyCodeInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Verify code validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	output, err := h.verifyCodeUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		h.logger.WithError(err).Warn("Code verification failed")
+		ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", err.Error())
 		return
 	}
 

@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func AuthMiddleware(tokenProvider application.TokenProvider) gin.HandlerFunc {
+func AuthMiddleware(tokenProvider application.TokenProvider, userRepo application.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -38,6 +38,28 @@ func AuthMiddleware(tokenProvider application.TokenProvider) gin.HandlerFunc {
 				"success": false,
 				"code":    "INVALID_TOKEN",
 				"message": "Invalid or expired token",
+			})
+			c.Abort()
+			return
+		}
+
+		// Check if user is verified
+		user, err := userRepo.GetByID(c.Request.Context(), userID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"code":    "USER_NOT_FOUND",
+				"message": "User not found",
+			})
+			c.Abort()
+			return
+		}
+
+		if !user.Verified {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"code":    "UNVERIFIED_USER",
+				"message": "User not verified. Complete verification first.",
 			})
 			c.Abort()
 			return

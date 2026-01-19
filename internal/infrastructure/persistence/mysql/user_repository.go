@@ -23,8 +23,19 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
+	// Convert empty strings to NULL for optional fields
+	var email sql.NullString
+	if user.Email != "" {
+		email = sql.NullString{String: user.Email, Valid: true}
+	}
+
+	var phone sql.NullString
+	if user.Phone != "" {
+		phone = sql.NullString{String: user.Phone, Valid: true}
+	}
+
 	_, err := r.db.ExecContext(ctx, query,
-		user.ID, user.Email, user.Password, user.Name, user.Phone,
+		user.ID, email, user.Password, user.Name, phone,
 		user.Verified, user.CreatedAt, user.UpdatedAt,
 	)
 
@@ -43,10 +54,11 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 
 	var user domain.User
 	var deletedAt sql.NullTime
+	var email sql.NullString
 	var phone sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&user.ID, &user.Email, &user.Password, &user.Name, &phone,
+		&user.ID, &email, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -55,6 +67,10 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 	}
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching user", 500, err)
+	}
+
+	if email.Valid {
+		user.Email = email.String
 	}
 
 	if phone.Valid {
@@ -76,10 +92,11 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 
 	var user domain.User
 	var deletedAt sql.NullTime
+	var emailNull sql.NullString
 	var phone sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
-		&user.ID, &user.Email, &user.Password, &user.Name, &phone,
+		&user.ID, &emailNull, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -88,6 +105,10 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 	}
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching user", 500, err)
+	}
+
+	if emailNull.Valid {
+		user.Email = emailNull.String
 	}
 
 	if phone.Valid {
@@ -109,10 +130,11 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*do
 
 	var user domain.User
 	var deletedAt sql.NullTime
+	var email sql.NullString
 	var phone sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, phoneQuery).Scan(
-		&user.ID, &user.Email, &user.Password, &user.Name, &phone,
+		&user.ID, &email, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -121,6 +143,10 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*do
 	}
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching user", 500, err)
+	}
+
+	if email.Valid {
+		user.Email = email.String
 	}
 
 	if phone.Valid {
@@ -141,8 +167,19 @@ func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
+	// Convert empty strings to NULL for optional fields
+	var email sql.NullString
+	if user.Email != "" {
+		email = sql.NullString{String: user.Email, Valid: true}
+	}
+
+	var phone sql.NullString
+	if user.Phone != "" {
+		phone = sql.NullString{String: user.Phone, Valid: true}
+	}
+
 	result, err := r.db.ExecContext(ctx, query,
-		user.Email, user.Name, user.Phone, user.Verified, time.Now(), user.ID,
+		email, user.Name, phone, user.Verified, time.Now(), user.ID,
 	)
 
 	if err != nil {
@@ -196,14 +233,19 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain
 	for rows.Next() {
 		var user domain.User
 		var deletedAt sql.NullTime
+		var email sql.NullString
 		var phone sql.NullString
 
 		err := rows.Scan(
-			&user.ID, &user.Email, &user.Password, &user.Name, &phone,
+			&user.ID, &email, &user.Password, &user.Name, &phone,
 			&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
 			return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning user", 500, err)
+		}
+
+		if email.Valid {
+			user.Email = email.String
 		}
 
 		if phone.Valid {
