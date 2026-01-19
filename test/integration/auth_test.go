@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/security"
 	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -31,7 +32,7 @@ func TestAuthRegister(t *testing.T) {
 				"email":    "user@example.com",
 				"password": "password123",
 				"name":     "John Doe",
-				"phone":    "+573001234567",
+				"phone":    "3001234567",
 			},
 			expectedStatus: http.StatusCreated,
 			expectedField:  "data",
@@ -51,7 +52,7 @@ func TestAuthRegister(t *testing.T) {
 		{
 			name: "Register_with_only_phone",
 			payload: map[string]string{
-				"phone":    "+573009876543",
+				"phone":    "3009876543",
 				"password": "password123",
 				"name":     "Phone User",
 			},
@@ -75,7 +76,7 @@ func TestAuthRegister(t *testing.T) {
 				"email":    "duplicate@example.com",
 				"password": "password123",
 				"name":     "John Doe",
-				"phone":    "+573001234567",
+				"phone":    "3001234567",
 			},
 			expectedStatus: http.StatusConflict,
 			expectedField:  "code",
@@ -93,7 +94,7 @@ func TestAuthRegister(t *testing.T) {
 					"email":    "duplicate@example.com",
 					"password": "password123",
 					"name":     "First User",
-					"phone":    "+573001234567",
+					"phone":    "3001234567",
 				}
 				body, _ := json.Marshal(payload)
 				req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewBuffer(body))
@@ -137,7 +138,7 @@ func TestAuthLogin(t *testing.T) {
 	ts.ClearTables()
 
 	// Crear usuario primero (inserta con contraseña en texto plano y se hashea internamente)
-	if err := ts.InsertTestUserWithPhone("user-123", "login@example.com", "+573001234567", "password123"); err != nil {
+	if err := ts.InsertTestUserWithPhone("user-123", "login@example.com", "3001234567", "password123"); err != nil {
 		t.Fatalf("failed to insert test user: %v", err)
 	}
 	// Verificar que el repo puede obtener al usuario
@@ -184,7 +185,7 @@ func TestAuthLogin(t *testing.T) {
 		{
 			name:            "Login by phone",
 			email:           "",
-			phone:           "+573001234567",
+			phone:           "3001234567",
 			password:        "password123",
 			expectedStatus:  http.StatusOK,
 			shouldHaveToken: true,

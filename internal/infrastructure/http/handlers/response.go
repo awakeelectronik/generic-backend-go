@@ -35,6 +35,15 @@ func ErrorResponse(c *gin.Context, statusCode int, code, message string) {
 
 func HandleError(c *gin.Context, err error) {
 	if appErr, ok := err.(*appErrors.AppError); ok {
+		// Do not leak internal details for server errors.
+		if appErr.StatusCode >= 500 {
+			c.JSON(appErr.StatusCode, ErrorResponseBody{
+				Success: false,
+				Code:    appErr.Code,
+				Message: "Error interno del servidor",
+			})
+			return
+		}
 		c.JSON(appErr.StatusCode, ErrorResponseBody{
 			Success: false,
 			Code:    appErr.Code,
@@ -46,6 +55,6 @@ func HandleError(c *gin.Context, err error) {
 	c.JSON(http.StatusInternalServerError, ErrorResponseBody{
 		Success: false,
 		Code:    "INTERNAL_ERROR",
-		Message: "Internal server error",
+		Message: "Error interno del servidor",
 	})
 }

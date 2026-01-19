@@ -21,13 +21,14 @@ type TestDB struct {
 
 // TestServer contiene router y dependencias
 type TestServer struct {
-	Router         *gin.Engine
-	DB             *TestDB
-	Logger         *logrus.Logger
-	TokenProvider  application.TokenProvider
-	TestToken      string // Token JWT válido
-	PasswordHasher application.PasswordHasher
-	UserRepo       application.UserRepository
+	Router             *gin.Engine
+	DB                 *TestDB
+	Logger             *logrus.Logger
+	TokenProvider      application.TokenProvider
+	TestToken          string // Token JWT válido
+	PasswordHasher     application.PasswordHasher
+	UserRepo           application.UserRepository
+	VerificationService application.VerificationService
 }
 
 func getenvDefault(key, def string) string {
@@ -123,13 +124,14 @@ func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 	}
 
 	return &TestServer{
-		Router:         router,
-		DB:             testDB,
-		Logger:         logger,
-		TokenProvider:  deps.TokenProvider,
-		PasswordHasher: deps.PasswordHasher,
-		UserRepo:       deps.UserRepo,
-		TestToken:      testToken,
+		Router:             router,
+		DB:                 testDB,
+		Logger:             logger,
+		TokenProvider:      deps.TokenProvider,
+		PasswordHasher:     deps.PasswordHasher,
+		UserRepo:           deps.UserRepo,
+		TestToken:          testToken,
+		VerificationService: deps.VerificationService,
 	}
 }
 
@@ -203,4 +205,21 @@ func (ts *TestServer) InsertTestUserWithPhone(userID, email, phone, password str
 	}
 
 	return nil
+}
+
+// InsertUnverifiedTestUser crea un usuario de prueba NO verificado
+func (ts *TestServer) InsertUnverifiedTestUser(userID, email, password string) error {
+	query := `
+        INSERT INTO users (id, email, password, name, verified, created_at, updated_at)
+        VALUES (?, ?, ?, ?, false, NOW(), NOW())
+    `
+	// Hash password before inserting (tests may pass plain password)
+	hashed := password
+	if ts.PasswordHasher != nil {
+		if h, err := ts.PasswordHasher.Hash(password); err == nil {
+			hashed = h
+		}
+	}
+	_, err := ts.DB.DB.Exec(query, userID, email, hashed, "Test User")
+	return err
 }

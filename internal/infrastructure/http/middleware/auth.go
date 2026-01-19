@@ -8,14 +8,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func AuthMiddleware(tokenProvider application.TokenProvider) gin.HandlerFunc {
+func AuthMiddleware(tokenProvider application.TokenProvider, userRepo application.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"code":    "NO_AUTH",
-				"message": "Authorization header required",
+				"message": "Se requiere el header Authorization",
 			})
 			c.Abort()
 			return
@@ -26,7 +26,7 @@ func AuthMiddleware(tokenProvider application.TokenProvider) gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"code":    "INVALID_AUTH",
-				"message": "Invalid authorization header format",
+				"message": "Formato inválido del header Authorization",
 			})
 			c.Abort()
 			return
@@ -37,7 +37,29 @@ func AuthMiddleware(tokenProvider application.TokenProvider) gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"code":    "INVALID_TOKEN",
-				"message": "Invalid or expired token",
+				"message": "Token inválido o expirado",
+			})
+			c.Abort()
+			return
+		}
+
+		// Check if user is verified
+		user, err := userRepo.GetByID(c.Request.Context(), userID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"code":    "USER_NOT_FOUND",
+				"message": "Usuario no encontrado",
+			})
+			c.Abort()
+			return
+		}
+
+		if !user.Verified {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"code":    "UNVERIFIED_USER",
+				"message": "Usuario no verificado. Complete la verificación primero.",
 			})
 			c.Abort()
 			return

@@ -22,8 +22,9 @@ type Dependencies struct {
 	FileStorage application.FileStorage
 
 	// Security
-	PasswordHasher application.PasswordHasher
-	TokenProvider  application.TokenProvider
+	PasswordHasher      application.PasswordHasher
+	TokenProvider       application.TokenProvider
+	VerificationService application.VerificationService
 
 	// Handlers
 	AuthHandler     *handlers.AuthHandler
@@ -75,30 +76,34 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		cfg.JWT.RefreshHours,
 		cfg.JWT.IssuerName,
 	)
+	verificationService := security.NewVerificationService(logger)
 
 	// ========== USE CASES ==========
-	registerUC := authUC.NewRegisterUseCase(userRepo, passwordHasher, logger)
+	registerUC := authUC.NewRegisterUseCase(userRepo, passwordHasher, verificationService, logger)
 	loginUC := authUC.NewLoginUseCase(userRepo, passwordHasher, tokenProvider, logger)
 	refreshUC := authUC.NewRefreshUseCase(tokenProvider, logger)
+	checkAvailabilityUC := authUC.NewCheckAvailabilityUseCase(userRepo, logger)
+	verifyCodeUC := authUC.NewVerifyCodeUseCase(userRepo, tokenProvider, verificationService, logger)
 
 	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, logger)
 	listDocUC := docUC.NewListDocumentsUseCase(documentRepo, logger)
 
 	// ========== HANDLERS ==========
-	authHandler := handlers.NewAuthHandler(registerUC, loginUC, refreshUC, logger)
+	authHandler := handlers.NewAuthHandler(registerUC, loginUC, refreshUC, checkAvailabilityUC, verifyCodeUC, logger)
 	userHandler := handlers.NewUserHandler(userRepo, logger)
 	documentHandler := handlers.NewDocumentHandlerWithList(uploadDocUC, listDocUC, logger)
 
 	// ========== RETURN DEPENDENCIES ==========
 	return &Dependencies{
-		UserRepo:        userRepo,
-		DocumentRepo:    documentRepo,
-		FileStorage:     fileStorage,
-		PasswordHasher:  passwordHasher,
-		TokenProvider:   tokenProvider,
-		AuthHandler:     authHandler,
-		UserHandler:     userHandler,
-		DocumentHandler: documentHandler,
-		Logger:          logger,
+		UserRepo:            userRepo,
+		DocumentRepo:        documentRepo,
+		FileStorage:         fileStorage,
+		PasswordHasher:      passwordHasher,
+		TokenProvider:       tokenProvider,
+		VerificationService: verificationService,
+		AuthHandler:         authHandler,
+		UserHandler:         userHandler,
+		DocumentHandler:     documentHandler,
+		Logger:              logger,
 	}, nil
 }

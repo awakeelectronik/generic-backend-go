@@ -1,6 +1,8 @@
 package http
 
 import (
+	"time"
+
 	"github.com/awakeelectronik/sumabitcoin-backend/internal/config"
 	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/http/middleware"
 	"github.com/gin-gonic/gin"
@@ -16,12 +18,21 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 			auth.POST("/register", deps.AuthHandler.Register)
 			auth.POST("/login", deps.AuthHandler.Login)
 			auth.POST("/refresh", deps.AuthHandler.Refresh)
+
+			// Rate limited endpoint: max 10 requests per minute
+			// Checks if email or phone is available for registration
+			auth.POST("/check-availability",
+				middleware.RateLimitMiddleware(10, time.Minute),
+				deps.AuthHandler.CheckAvailability)
+
+			// Verify code after registration
+			auth.POST("/verify-code", deps.AuthHandler.VerifyCode)
 		}
 	}
 
 	// Protected routes
 	protected := api.Group("")
-	protected.Use(middleware.AuthMiddleware(deps.TokenProvider))
+	protected.Use(middleware.AuthMiddleware(deps.TokenProvider, deps.UserRepo))
 	{
 		users := protected.Group("/users")
 		{

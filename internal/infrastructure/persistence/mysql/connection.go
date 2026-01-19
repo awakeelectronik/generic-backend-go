@@ -51,7 +51,7 @@ func RunMigrations(db *sql.DB) error {
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS users (
 			id VARCHAR(36) PRIMARY KEY,
-			email VARCHAR(255) UNIQUE NOT NULL,
+			email VARCHAR(255) UNIQUE NULL,
 			password VARCHAR(255) NOT NULL,
 			name VARCHAR(255) NOT NULL,
 			phone VARCHAR(20),
@@ -62,6 +62,12 @@ func RunMigrations(db *sql.DB) error {
 			INDEX idx_email (email),
 			INDEX idx_deleted_at (deleted_at)
 		)`,
+		// Backward-compatible adjustments for existing DBs:
+		// allow phone-only registration by making email nullable, and normalize empty strings -> NULL.
+		`ALTER TABLE users MODIFY email VARCHAR(255) NULL`,
+		`ALTER TABLE users MODIFY phone VARCHAR(20) NULL`,
+		`UPDATE users SET email = NULL WHERE email = ''`,
+		`UPDATE users SET phone = NULL WHERE phone = ''`,
 		`CREATE TABLE IF NOT EXISTS documents (
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL,
