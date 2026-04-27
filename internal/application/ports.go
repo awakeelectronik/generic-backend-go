@@ -60,6 +60,8 @@ type PasswordHasher interface {
 
 type VerificationService interface {
 	SendVerificationCode(userID, destination string) error
+	// SendVerificationCodeToDestinations genera un único código y lo entrega a cada destino (correo y/o teléfono).
+	SendVerificationCodeToDestinations(userID string, destinations []string) error
 	VerifyCode(userID, code string) error
 }
 

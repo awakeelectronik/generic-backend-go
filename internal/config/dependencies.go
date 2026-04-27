@@ -94,7 +94,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		cfg.JWT.RefreshHours,
 		cfg.JWT.IssuerName,
 	)
-	verificationService := security.NewVerificationService(logger)
+	verificationService := security.NewVerificationService(emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger)
 
 	// ========== USE CASES ==========
 	registerUC := authUC.NewRegisterUseCase(userRepo, passwordHasher, verificationService, logger)
