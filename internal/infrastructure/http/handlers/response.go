@@ -13,9 +13,10 @@ type SuccessResponseBody struct {
 }
 
 type ErrorResponseBody struct {
-	Success bool   `json:"success"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Success bool        `json:"success"`
+	Code    string      `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
 func SuccessResponse(c *gin.Context, statusCode int, data interface{}) {
@@ -48,6 +49,7 @@ func HandleError(c *gin.Context, err error) {
 			Success: false,
 			Code:    appErr.Code,
 			Message: appErr.Message,
+			Data:    appErr.Data,
 		})
 		return
 	}

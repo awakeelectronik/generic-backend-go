@@ -1,15 +1,20 @@
 package errors
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/http"
 )
 
+// ErrVerificationRateLimited indicates too many verification code sends for the user.
+var ErrVerificationRateLimited = stderrors.New("verification code rate limited")
+
 type AppError struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	StatusCode int    `json:"-"`
-	Internal   error  `json:"-"`
+	Code       string      `json:"code"`
+	Message    string      `json:"message"`
+	StatusCode int         `json:"-"`
+	Internal   error       `json:"-"`
+	Data       interface{} `json:"-"`
 }
 
 func (e *AppError) Error() string {
@@ -17,12 +22,12 @@ func (e *AppError) Error() string {
 }
 
 var (
-	ErrUnauthorized   = &AppError{Code: "UNAUTHORIZED", Message: "Unauthorized", StatusCode: http.StatusUnauthorized}
-	ErrForbidden      = &AppError{Code: "FORBIDDEN", Message: "Forbidden", StatusCode: http.StatusForbidden}
-	ErrNotFound       = &AppError{Code: "NOT_FOUND", Message: "Resource not found", StatusCode: http.StatusNotFound}
-	ErrInvalidInput   = &AppError{Code: "INVALID_INPUT", Message: "Invalid input", StatusCode: http.StatusBadRequest}
-	ErrConflict       = &AppError{Code: "CONFLICT", Message: "Resource conflict", StatusCode: http.StatusConflict}
-	ErrInternalServer = &AppError{Code: "INTERNAL_ERROR", Message: "Internal server error", StatusCode: http.StatusInternalServerError}
+	ErrUnauthorized   = &AppError{Code: "UNAUTHORIZED", Message: "No autorizado", StatusCode: http.StatusUnauthorized}
+	ErrForbidden      = &AppError{Code: "FORBIDDEN", Message: "Prohibido", StatusCode: http.StatusForbidden}
+	ErrNotFound       = &AppError{Code: "NOT_FOUND", Message: "Recurso no encontrado", StatusCode: http.StatusNotFound}
+	ErrInvalidInput   = &AppError{Code: "INVALID_INPUT", Message: "Entrada inválida", StatusCode: http.StatusBadRequest}
+	ErrConflict       = &AppError{Code: "CONFLICT", Message: "Conflicto de recurso", StatusCode: http.StatusConflict}
+	ErrInternalServer = &AppError{Code: "INTERNAL_ERROR", Message: "Error interno del servidor", StatusCode: http.StatusInternalServerError}
 )
 
 func NewAppError(code, message string, statusCode int) *AppError {
@@ -42,14 +47,25 @@ func NewAppErrorWithInternal(code, message string, statusCode int, internal erro
 	}
 }
 
+// NewAppErrorWithData is used when the client needs structured context
+// (e.g. user_id on UNVERIFIED_USER so the client can call resend).
+func NewAppErrorWithData(code, message string, statusCode int, data interface{}) *AppError {
+	return &AppError{
+		Code:       code,
+		Message:    message,
+		StatusCode: statusCode,
+		Data:       data,
+	}
+}
+
 func NewNotFoundError(resource string) *AppError {
-	return NewAppError("NOT_FOUND", fmt.Sprintf("%s not found", resource), http.StatusNotFound)
+	return NewAppError("NOT_FOUND", fmt.Sprintf("%s no encontrado", resource), http.StatusNotFound)
 }
 
 func NewConflictError(resource string) *AppError {
-	return NewAppError("CONFLICT", fmt.Sprintf("%s already exists", resource), http.StatusConflict)
+	return NewAppError("CONFLICT", fmt.Sprintf("%s ya existe", resource), http.StatusConflict)
 }
 
 func NewValidationError(field, reason string) *AppError {
-	return NewAppError("VALIDATION_ERROR", fmt.Sprintf("Field '%s': %s", field, reason), http.StatusBadRequest)
+	return NewAppError("VALIDATION_ERROR", fmt.Sprintf("Campo '%s': %s", field, reason), http.StatusBadRequest)
 }
