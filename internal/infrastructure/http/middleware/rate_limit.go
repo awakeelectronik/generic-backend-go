@@ -86,9 +86,47 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return true
 }
 
-// RateLimitMiddleware creates a middleware for rate limiting
+// limiterKey identifica un limiter por rate y ventana (para reutilizar y evitar una goroutine por ruta).
+type limiterKey struct {
+	rate   int
+	window time.Duration
+}
+
+var (
+	limitersMu    sync.Mutex
+	limitersByKey = make(map[limiterKey]*rateLimiter)
+)
+
+// ResetRateLimitersForTests limpia el estado de visitantes acumulado en memoria.
+// Solo debe usarse desde tests para evitar contaminación entre casos.
+func ResetRateLimitersForTests() {
+	limitersMu.Lock()
+	defer limitersMu.Unlock()
+
+	for _, rl := range limitersByKey {
+		rl.mu.Lock()
+		rl.visitors = make(map[string]*visitor)
+		rl.mu.Unlock()
+	}
+}
+
+// getOrCreateLimiter devuelve un limiter compartido por (rate, window) para no crear una goroutine por ruta.
+func getOrCreateLimiter(rate int, window time.Duration) *rateLimiter {
+	key := limiterKey{rate: rate, window: window}
+	limitersMu.Lock()
+	defer limitersMu.Unlock()
+	if rl, ok := limitersByKey[key]; ok {
+		return rl
+	}
+	rl := NewRateLimiter(rate, window)
+	limitersByKey[key] = rl
+	return rl
+}
+
+// RateLimitMiddleware creates a middleware for rate limiting.
+// Reutiliza un limiter por (rate, window) para evitar una goroutine por ruta.
 func RateLimitMiddleware(rate int, window time.Duration) gin.HandlerFunc {
-	limiter := NewRateLimiter(rate, window)
+	limiter := getOrCreateLimiter(rate, window)
 
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
