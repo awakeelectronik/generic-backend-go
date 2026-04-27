@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/domain"
-	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	"github.com/awakeelectronik/generic-backend-go/internal/domain"
+	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 

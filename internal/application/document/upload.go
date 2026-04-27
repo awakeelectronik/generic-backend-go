@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	apperrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	apperrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/domain"
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )

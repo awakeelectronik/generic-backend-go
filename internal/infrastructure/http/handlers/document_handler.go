@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application/document"
+	"github.com/awakeelectronik/generic-backend-go/internal/application/document"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )

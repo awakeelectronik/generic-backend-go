@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/domain"
+	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 )
 
 // === REPOSITORIES ===

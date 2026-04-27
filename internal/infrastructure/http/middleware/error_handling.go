@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/gin-gonic/gin"
 )
 

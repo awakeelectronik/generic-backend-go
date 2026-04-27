@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application/auth"
-	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	"github.com/awakeelectronik/generic-backend-go/internal/application/auth"
+	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )

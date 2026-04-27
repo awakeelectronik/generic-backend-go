@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/domain"
-	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	"github.com/awakeelectronik/generic-backend-go/internal/domain"
+	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 )
 
 type UserRepository struct {

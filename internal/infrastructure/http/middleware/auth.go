@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	"github.com/gin-gonic/gin"
 )
 

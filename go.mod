@@ -1,4 +1,4 @@
-module github.com/awakeelectronik/sumabitcoin-backend
+module github.com/awakeelectronik/generic-backend-go
 
 go 1.21
 

@@ -3,13 +3,13 @@ package config
 import (
 	"time"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
-	authUC "github.com/awakeelectronik/sumabitcoin-backend/internal/application/auth"
-	docUC "github.com/awakeelectronik/sumabitcoin-backend/internal/application/document"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/http/handlers"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/persistence/mysql"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/persistence/storage"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/security"
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	authUC "github.com/awakeelectronik/generic-backend-go/internal/application/auth"
+	docUC "github.com/awakeelectronik/generic-backend-go/internal/application/document"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http/handlers"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/mysql"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/storage"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/security"
 	"github.com/sirupsen/logrus"
 )
 

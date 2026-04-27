@@ -6,10 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/config"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/http"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/persistence/mysql"
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	"github.com/awakeelectronik/generic-backend-go/internal/config"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/mysql"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )

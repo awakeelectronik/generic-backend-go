@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/application"
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	"github.com/sirupsen/logrus"
 )
 

@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/security"
-	appErrors "github.com/awakeelectronik/sumabitcoin-backend/pkg/errors"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/security"
+	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 

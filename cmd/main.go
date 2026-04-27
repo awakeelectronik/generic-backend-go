@@ -4,9 +4,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/config"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/http"
-	"github.com/awakeelectronik/sumabitcoin-backend/internal/infrastructure/http/middleware"
+	"github.com/awakeelectronik/generic-backend-go/internal/config"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
