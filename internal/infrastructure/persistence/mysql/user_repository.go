@@ -34,7 +34,7 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 		phone = sql.NullString{String: user.Phone, Valid: true}
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := execContextFrom(ctx, r.db).ExecContext(ctx, query,
 		user.ID, email, user.Password, user.Name, phone,
 		user.Verified, user.CreatedAt, user.UpdatedAt,
 	)
@@ -57,7 +57,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 	var email sql.NullString
 	var phone sql.NullString
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &email, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
@@ -95,7 +95,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 	var emailNull sql.NullString
 	var phone sql.NullString
 
-	err := r.db.QueryRowContext(ctx, query, email).Scan(
+	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &emailNull, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
@@ -133,7 +133,7 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*do
 	var email sql.NullString
 	var phone sql.NullString
 
-	err := r.db.QueryRowContext(ctx, query, phoneQuery).Scan(
+	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, phoneQuery).Scan(
 		&user.ID, &email, &user.Password, &user.Name, &phone,
 		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
@@ -178,7 +178,7 @@ func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 		phone = sql.NullString{String: user.Phone, Valid: true}
 	}
 
-	result, err := r.db.ExecContext(ctx, query,
+	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query,
 		email, user.Name, phone, user.Verified, time.Now(), user.ID,
 	)
 
@@ -201,7 +201,7 @@ func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	query := `UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`
 
-	result, err := r.db.ExecContext(ctx, query, time.Now(), id)
+	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query, time.Now(), id)
 	if err != nil {
 		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error deleting user", 500, err)
 	}
@@ -223,7 +223,7 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, limit, offset)
+	rows, err := dbFrom(ctx, r.db).QueryContext(ctx, query, limit, offset)
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error listing users", 500, err)
 	}

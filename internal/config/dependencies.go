@@ -26,6 +26,9 @@ type Dependencies struct {
 	TokenProvider       application.TokenProvider
 	VerificationService application.VerificationService
 
+	// Persistence helpers
+	TxRunner application.TransactionRunner
+
 	// Handlers
 	AuthHandler     *handlers.AuthHandler
 	UserHandler     *handlers.UserHandler
@@ -65,6 +68,9 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	userRepo := mysql.NewUserRepository(db)
 	documentRepo := mysql.NewDocumentRepository(db)
 
+	// ========== PERSISTENCE HELPERS ==========
+	txRunner := mysql.NewTransactionRunner(db)
+
 	// ========== STORAGE ==========
 	fileStorage := storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Server.BaseURL)
 
@@ -101,6 +107,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		PasswordHasher:      passwordHasher,
 		TokenProvider:       tokenProvider,
 		VerificationService: verificationService,
+		TxRunner:            txRunner,
 		AuthHandler:         authHandler,
 		UserHandler:         userHandler,
 		DocumentHandler:     documentHandler,

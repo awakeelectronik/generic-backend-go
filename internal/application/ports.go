@@ -62,3 +62,9 @@ type VerificationService interface {
 	SendVerificationCode(userID, destination string) error
 	VerifyCode(userID, code string) error
 }
+
+// TransactionRunner ejecuta una función dentro de una transacción de BD.
+// Si fn retorna error se hace rollback; si no, commit.
+type TransactionRunner interface {
+	WithTransaction(ctx context.Context, fn func(context.Context) error) error
+}

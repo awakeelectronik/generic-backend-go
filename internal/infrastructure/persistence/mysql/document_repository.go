@@ -26,7 +26,7 @@ func (r *DocumentRepository) Create(ctx context.Context, doc *domain.Document) e
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := execContextFrom(ctx, r.db).ExecContext(ctx, query,
 		doc.ID, doc.UserID, doc.FileName, doc.FilePath, doc.FileSize,
 		doc.MimeType, doc.Status, metadataJSON,
 	)
@@ -47,7 +47,7 @@ func (r *DocumentRepository) GetByID(ctx context.Context, id string) (*domain.Do
 	var doc domain.Document
 	var metadataJSON []byte
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, id).Scan(
 		&doc.ID, &doc.UserID, &doc.FileName, &doc.FilePath, &doc.FileSize,
 		&doc.MimeType, &doc.Status, &metadataJSON, &doc.CreatedAt, &doc.UpdatedAt,
 	)
@@ -72,7 +72,7 @@ func (r *DocumentRepository) GetByUserID(ctx context.Context, userID string, lim
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, userID, limit, offset)
+	rows, err := dbFrom(ctx, r.db).QueryContext(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error listing documents", 500, err)
 	}
@@ -107,7 +107,7 @@ func (r *DocumentRepository) Update(ctx context.Context, doc *domain.Document) e
 		WHERE id = ?
 	`
 
-	result, err := r.db.ExecContext(ctx, query, doc.Status, metadataJSON, time.Now(), doc.ID)
+	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query, doc.Status, metadataJSON, time.Now(), doc.ID)
 	if err != nil {
 		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error updating document", 500, err)
 	}
@@ -123,7 +123,7 @@ func (r *DocumentRepository) Update(ctx context.Context, doc *domain.Document) e
 func (r *DocumentRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM documents WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, id)
+	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query, id)
 	if err != nil {
 		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error deleting document", 500, err)
 	}
