@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -14,6 +15,24 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Storage  StorageConfig
+	Email    EmailConfig
+	Brand    BrandConfig
+}
+
+// BrandConfig holds the per-deployment identity used in emails and other
+// user-facing strings. Each clone of this template fills these in.
+type BrandConfig struct {
+	AppName  string // shown in From header, subjects and email headings
+	BrandHex string // hex color (e.g. #f7931a) for accents in HTML emails
+}
+
+// EmailConfig wires the SMTPSender to a local MTA. Noop=true skips real
+// delivery (tests, local dev without sendmail).
+type EmailConfig struct {
+	From string
+	Host string
+	Port string
+	Noop bool
 }
 
 type ServerConfig struct {
@@ -78,6 +97,16 @@ func Load() (*Config, error) {
 			MaxFileSize:  int64(getEnvInt("MAX_FILE_SIZE", 5*1024*1024)),
 			AllowedMimes: []string{"image/jpeg", "image/jpg"},
 		},
+		Email: EmailConfig{
+			From: getEnv("SMTP_FROM", "noreply@app.local"),
+			Host: getEnv("SMTP_HOST", "localhost"),
+			Port: getEnv("SMTP_PORT", "25"),
+			Noop: getEnvBool("EMAIL_NOOP", false),
+		},
+		Brand: BrandConfig{
+			AppName:  getEnv("APP_NAME", "MyApp"),
+			BrandHex: getEnv("APP_BRAND_COLOR", "#000000"),
+		},
 	}
 
 	if cfg.JWT.Secret == "" {
@@ -101,4 +130,19 @@ func getEnvInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if v == "" {
+		return defaultValue
+	}
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return defaultValue
+	}
 }

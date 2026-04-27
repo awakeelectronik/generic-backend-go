@@ -6,6 +6,7 @@ import (
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	authUC "github.com/awakeelectronik/generic-backend-go/internal/application/auth"
 	docUC "github.com/awakeelectronik/generic-backend-go/internal/application/document"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/email"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http/handlers"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/mysql"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/storage"
@@ -25,6 +26,9 @@ type Dependencies struct {
 	PasswordHasher      application.PasswordHasher
 	TokenProvider       application.TokenProvider
 	VerificationService application.VerificationService
+
+	// External services
+	EmailSender application.EmailSender
 
 	// Persistence helpers
 	TxRunner application.TransactionRunner
@@ -74,6 +78,14 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	// ========== STORAGE ==========
 	fileStorage := storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Server.BaseURL)
 
+	// ========== EMAIL ==========
+	var emailSender application.EmailSender
+	if cfg.Email.Noop {
+		emailSender = email.NewNoopSender()
+	} else {
+		emailSender = email.NewSMTPSender(cfg.Email.From, cfg.Brand.AppName, cfg.Email.Host, cfg.Email.Port)
+	}
+
 	// ========== SECURITY ==========
 	passwordHasher := security.NewPasswordHasher()
 	tokenProvider := security.NewJWTProvider(
@@ -107,6 +119,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		PasswordHasher:      passwordHasher,
 		TokenProvider:       tokenProvider,
 		VerificationService: verificationService,
+		EmailSender:         emailSender,
 		TxRunner:            txRunner,
 		AuthHandler:         authHandler,
 		UserHandler:         userHandler,

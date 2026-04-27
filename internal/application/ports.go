@@ -63,6 +63,12 @@ type VerificationService interface {
 	VerifyCode(userID, code string) error
 }
 
+// EmailSender abstracts email delivery so tests can inject a NoopSender
+// and production can plug in any concrete implementation.
+type EmailSender interface {
+	Send(to, subject, body string) error
+}
+
 // TransactionRunner ejecuta una función dentro de una transacción de BD.
 // Si fn retorna error se hace rollback; si no, commit.
 type TransactionRunner interface {
