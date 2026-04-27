@@ -45,10 +45,10 @@ type FileStorage interface {
 // === SECURITY ===
 
 type TokenProvider interface {
-	GenerateToken(userID, email string) (string, error)
-	GenerateRefreshToken(userID string) (string, error)
-	ValidateToken(tokenString string) (userID string, email string, err error)
-	ValidateRefreshToken(tokenString string) (userID string, err error)
+	GenerateToken(userID, email string, tokenVersion int) (string, error)
+	GenerateRefreshToken(userID string, tokenVersion int) (string, error)
+	ValidateToken(tokenString string) (userID string, email string, tokenVersion int, err error)
+	ValidateRefreshToken(tokenString string) (userID string, tokenVersion int, err error)
 }
 
 type PasswordHasher interface {

@@ -34,13 +34,13 @@ func NewRefreshUseCase(
 func (uc *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*RefreshOutput, error) {
 	uc.logger.Info("Token refresh attempt")
 
-	userID, err := uc.tokenProvider.ValidateRefreshToken(input.RefreshToken)
+	userID, tokenVersion, err := uc.tokenProvider.ValidateRefreshToken(input.RefreshToken)
 	if err != nil {
 		uc.logger.WithError(err).Warn("Invalid refresh token")
 		return nil, appErrors.ErrUnauthorized
 	}
 
-	token, err := uc.tokenProvider.GenerateToken(userID, "")
+	token, err := uc.tokenProvider.GenerateToken(userID, "", tokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate new token")
 		return nil, appErrors.ErrInternalServer

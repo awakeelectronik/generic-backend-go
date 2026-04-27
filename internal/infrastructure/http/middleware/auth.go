@@ -32,7 +32,7 @@ func AuthMiddleware(tokenProvider application.TokenProvider, userRepo applicatio
 			return
 		}
 
-		userID, email, err := tokenProvider.ValidateToken(parts[1])
+		userID, email, tokenVersion, err := tokenProvider.ValidateToken(parts[1])
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
@@ -60,6 +60,16 @@ func AuthMiddleware(tokenProvider application.TokenProvider, userRepo applicatio
 				"success": false,
 				"code":    "UNVERIFIED_USER",
 				"message": "Usuario no verificado. Complete la verificación primero.",
+			})
+			c.Abort()
+			return
+		}
+
+		if user.TokenVersion != tokenVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"code":    "TOKEN_REVOKED",
+				"message": "Token inválido o revocado",
 			})
 			c.Abort()
 			return

@@ -3,6 +3,7 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -56,6 +57,7 @@ func RunMigrations(db *sql.DB) error {
 			name VARCHAR(255) NOT NULL,
 			phone VARCHAR(20),
 			verified BOOLEAN DEFAULT false,
+			token_version INT NOT NULL DEFAULT 1,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			deleted_at TIMESTAMP NULL,
@@ -104,5 +106,23 @@ func RunMigrations(db *sql.DB) error {
 		}
 	}
 
+	// Idempotent column adds for existing DBs.
+	if err := ensureUsersTokenVersionColumn(db); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// ensureUsersTokenVersionColumn adds users.token_version on existing DBs. Idempotent.
+func ensureUsersTokenVersionColumn(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 1`)
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "duplicate") || strings.Contains(msg, "1060") {
+		return nil
+	}
+	return fmt.Errorf("ensure users.token_version: %w", err)
 }

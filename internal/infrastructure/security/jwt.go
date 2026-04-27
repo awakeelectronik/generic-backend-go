@@ -21,13 +21,15 @@ type JWTProvider struct {
 }
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	UserID       string `json:"user_id"`
+	Email        string `json:"email"`
+	TokenVersion int    `json:"token_version"`
 	jwt.RegisteredClaims
 }
 
 type RefreshClaims struct {
-	UserID string `json:"user_id"`
+	UserID       string `json:"user_id"`
+	TokenVersion int    `json:"token_version"`
 	jwt.RegisteredClaims
 }
 
@@ -42,10 +44,11 @@ func NewJWTProvider(secret string, expirationHours, refreshHours int, issuerName
 	}
 }
 
-func (p *JWTProvider) GenerateToken(userID, email string) (string, error) {
+func (p *JWTProvider) GenerateToken(userID, email string, tokenVersion int) (string, error) {
 	claims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:       userID,
+		Email:        email,
+		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(p.config.ExpirationHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -57,9 +60,10 @@ func (p *JWTProvider) GenerateToken(userID, email string) (string, error) {
 	return token.SignedString([]byte(p.config.Secret))
 }
 
-func (p *JWTProvider) GenerateRefreshToken(userID string) (string, error) {
+func (p *JWTProvider) GenerateRefreshToken(userID string, tokenVersion int) (string, error) {
 	claims := RefreshClaims{
-		UserID: userID,
+		UserID:       userID,
+		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(p.config.RefreshHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -71,7 +75,7 @@ func (p *JWTProvider) GenerateRefreshToken(userID string) (string, error) {
 	return token.SignedString([]byte(p.config.Secret))
 }
 
-func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email string, err error) {
+func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email string, tokenVersion int, err error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -81,13 +85,13 @@ func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email st
 	})
 
 	if err != nil || !token.Valid {
-		return "", "", fmt.Errorf("invalid token")
+		return "", "", 0, fmt.Errorf("invalid token")
 	}
 
-	return claims.UserID, claims.Email, nil
+	return claims.UserID, claims.Email, claims.TokenVersion, nil
 }
 
-func (p *JWTProvider) ValidateRefreshToken(tokenString string) (userID string, err error) {
+func (p *JWTProvider) ValidateRefreshToken(tokenString string) (userID string, tokenVersion int, err error) {
 	claims := &RefreshClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -97,8 +101,8 @@ func (p *JWTProvider) ValidateRefreshToken(tokenString string) (userID string, e
 	})
 
 	if err != nil || !token.Valid {
-		return "", fmt.Errorf("invalid refresh token")
+		return "", 0, fmt.Errorf("invalid refresh token")
 	}
 
-	return claims.UserID, nil
+	return claims.UserID, claims.TokenVersion, nil
 }

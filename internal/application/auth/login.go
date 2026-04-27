@@ -82,13 +82,13 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOu
 	}
 
 	// Generate tokens
-	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email)
+	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, user.TokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate token")
 		return nil, appErrors.ErrInternalServer
 	}
 
-	refreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID)
+	refreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, user.TokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate refresh token")
 		return nil, appErrors.ErrInternalServer

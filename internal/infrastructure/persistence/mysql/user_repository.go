@@ -19,8 +19,8 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 	query := `
-		INSERT INTO users (id, email, password, name, phone, verified, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, email, password, name, phone, verified, token_version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	// Convert empty strings to NULL for optional fields
@@ -36,7 +36,7 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 
 	_, err := execContextFrom(ctx, r.db).ExecContext(ctx, query,
 		user.ID, email, user.Password, user.Name, phone,
-		user.Verified, user.CreatedAt, user.UpdatedAt,
+		user.Verified, user.TokenVersion, user.CreatedAt, user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -48,7 +48,7 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
 		FROM users WHERE id = ? AND deleted_at IS NULL
 	`
 
@@ -59,7 +59,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 
 	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &email, &user.Password, &user.Name, &phone,
-		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
+		&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -86,7 +86,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
 		FROM users WHERE email = ? AND deleted_at IS NULL
 	`
 
@@ -97,7 +97,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 
 	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &emailNull, &user.Password, &user.Name, &phone,
-		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
+		&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -124,7 +124,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 
 func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
 		FROM users WHERE phone = ? AND deleted_at IS NULL
 	`
 
@@ -135,7 +135,7 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*do
 
 	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, phoneQuery).Scan(
 		&user.ID, &email, &user.Password, &user.Name, &phone,
-		&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
+		&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -216,7 +216,7 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 
 func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
 		FROM users 
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -238,7 +238,7 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain
 
 		err := rows.Scan(
 			&user.ID, &email, &user.Password, &user.Name, &phone,
-			&user.Verified, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
+			&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
 			return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning user", 500, err)
