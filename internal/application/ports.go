@@ -18,6 +18,9 @@ type UserRepository interface {
 	UpdatePasswordAndBumpTokenVersion(ctx context.Context, userID, passwordHash string) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, limit, offset int) ([]*domain.User, error)
+	// ListWithSummary devuelve la página filtrada por q (sobre name, email, phone) más
+	// totales agregados (totalUsers, activeUsers, inactiveUsers). q vacío = sin filtro.
+	ListWithSummary(ctx context.Context, limit, offset int, q string) (users []*domain.User, total int, active int, inactive int, err error)
 }
 
 type DocumentRepository interface {

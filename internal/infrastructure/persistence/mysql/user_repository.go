@@ -3,6 +3,8 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/domain"
@@ -238,6 +240,72 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// ListWithSummary lists a paginated, optionally filtered slice of users plus
+// global counts (total, active, inactive). q is matched against name, email
+// and phone with LIKE so the admin UI can search by any of them.
+func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int, q string) ([]*domain.User, int, int, int, error) {
+	q = strings.TrimSpace(q)
+	args := []any{}
+	whereFiltered := "WHERE deleted_at IS NULL"
+	if q != "" {
+		like := "%" + q + "%"
+		whereFiltered += " AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)"
+		args = append(args, like, like, like)
+	}
+
+	listQuery := fmt.Sprintf(`
+		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
+		FROM users
+		%s
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`, whereFiltered)
+	listArgs := append(append([]any{}, args...), limit, offset)
+
+	rows, err := dbFrom(ctx, r.db).QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return nil, 0, 0, 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error listing users", 500, err)
+	}
+	defer rows.Close()
+
+	var users []*domain.User
+	for rows.Next() {
+		var user domain.User
+		var deletedAt sql.NullTime
+		var email sql.NullString
+		var phone sql.NullString
+		if err := rows.Scan(
+			&user.ID, &email, &user.Password, &user.Name, &phone,
+			&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
+		); err != nil {
+			return nil, 0, 0, 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning user", 500, err)
+		}
+		if email.Valid {
+			user.Email = email.String
+		}
+		if phone.Valid {
+			user.Phone = phone.String
+		}
+		if deletedAt.Valid {
+			user.DeletedAt = &deletedAt.Time
+		}
+		users = append(users, &user)
+	}
+
+	// Totals are computed without the q filter and without LIMIT/OFFSET so the
+	// summary reflects the global state, not the page.
+	var total, active, inactive int
+	if err := dbFrom(ctx, r.db).QueryRowContext(ctx, `
+		SELECT
+			COUNT(*),
+			SUM(CASE WHEN verified = TRUE THEN 1 ELSE 0 END),
+			SUM(CASE WHEN verified = FALSE THEN 1 ELSE 0 END)
+		FROM users WHERE deleted_at IS NULL`).Scan(&total, &active, &inactive); err != nil {
+		return nil, 0, 0, 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error computing user summary", 500, err)
+	}
+
+	return users, total, active, inactive, nil
 }
 
 func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain.User, error) {

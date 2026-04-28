@@ -6,6 +6,7 @@ import (
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	authUC "github.com/awakeelectronik/generic-backend-go/internal/application/auth"
 	docUC "github.com/awakeelectronik/generic-backend-go/internal/application/document"
+	userUC "github.com/awakeelectronik/generic-backend-go/internal/application/user"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/email"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http/handlers"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/mysql"
@@ -110,6 +111,8 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, logger)
 	listDocUC := docUC.NewListDocumentsUseCase(documentRepo, logger)
 
+	listUsersUC := userUC.NewListUsersUseCase(userRepo, logger)
+
 	// ========== HANDLERS ==========
 	authHandler := handlers.NewAuthHandler(
 		registerUC,
@@ -123,7 +126,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		changePasswordUC,
 		logger,
 	)
-	userHandler := handlers.NewUserHandler(userRepo, logger)
+	userHandler := handlers.NewUserHandler(userRepo, listUsersUC, logger)
 	documentHandler := handlers.NewDocumentHandlerWithList(uploadDocUC, listDocUC, logger)
 
 	// ========== RETURN DEPENDENCIES ==========

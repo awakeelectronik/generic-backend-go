@@ -71,6 +71,13 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 			documents.POST("/upload", deps.DocumentHandler.Upload)
 			documents.GET("", deps.DocumentHandler.List)
 		}
+
+		// Admin routes — protect at the route level. Currently any authenticated
+		// user could call this; PR 13 adds AdminChecker to gate it properly.
+		admin := protected.Group("/admin")
+		{
+			admin.GET("/users", deps.UserHandler.List)
+		}
 	}
 
 	// Health check

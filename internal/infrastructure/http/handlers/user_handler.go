@@ -2,25 +2,46 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	userUC "github.com/awakeelectronik/generic-backend-go/internal/application/user"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
 
 type UserHandler struct {
-	userRepo application.UserRepository
-	logger   *logrus.Logger
+	userRepo    application.UserRepository
+	listUsersUC *userUC.ListUsersUseCase
+	logger      *logrus.Logger
 }
 
 func NewUserHandler(
 	userRepo application.UserRepository,
+	listUsersUC *userUC.ListUsersUseCase,
 	logger *logrus.Logger,
 ) *UserHandler {
 	return &UserHandler{
-		userRepo: userRepo,
-		logger:   logger,
+		userRepo:    userRepo,
+		listUsersUC: listUsersUC,
+		logger:      logger,
 	}
+}
+
+// List returns a paginated list of users with global summary counts.
+// Intended for admin use; protect at the route level.
+func (h *UserHandler) List(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	q := c.Query("q")
+
+	output, err := h.listUsersUC.Execute(c.Request.Context(), page, pageSize, q)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
 }
 
 type UserOutput struct {
