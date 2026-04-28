@@ -121,7 +121,7 @@ func TestGetUserByID(t *testing.T) {
 			req := httptest.NewRequest("GET", url, nil)
 
 			// Generar token para el usuario
-			token, _ := ts.TokenProvider.GenerateToken(tt.tokenUserID, "test@example.com")
+			token, _ := ts.TokenProvider.GenerateToken(tt.tokenUserID, "test@example.com", 1)
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 			w := httptest.NewRecorder()
@@ -174,7 +174,7 @@ func TestUpdateUserProfile(t *testing.T) {
 			req := httptest.NewRequest("PUT", url, bytes.NewBuffer(body))
 			req.Header.Set("Content-Type", "application/json")
 
-			token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com")
+			token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com", 1)
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 			w := httptest.NewRecorder()

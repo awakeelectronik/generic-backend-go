@@ -109,6 +109,16 @@ func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 			LocalPath:   getenvDefault("TEST_STORAGE_PATH", "./uploads-test"),
 			MaxFileSize: int64(5 * 1024 * 1024),
 		},
+		Email: config.EmailConfig{
+			From: "test@example.local",
+			Host: "localhost",
+			Port: "25",
+			Noop: true, // tests never call sendmail
+		},
+		Brand: config.BrandConfig{
+			AppName:  "TestApp",
+			BrandHex: "#000000",
+		},
 	}
 
 	deps, err := config.BuildDependencies(cfg, logger)
@@ -118,7 +128,7 @@ func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 
 	http.SetupRoutes(router, deps, logger)
 
-	testToken, err := deps.TokenProvider.GenerateToken("user-123", "test@example.com")
+	testToken, err := deps.TokenProvider.GenerateToken("user-123", "test@example.com", 1)
 	if err != nil {
 		t.Fatalf("Failed to generate test token: %v", err)
 	}

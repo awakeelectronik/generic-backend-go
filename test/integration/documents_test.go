@@ -73,7 +73,7 @@ func TestDocumentUpload(t *testing.T) {
 			req.Header.Set("Content-Type", writer.FormDataContentType())
 
 			if tt.hasAuth {
-				token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com")
+				token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com", 1)
 				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 			}
 
@@ -118,7 +118,7 @@ func TestDocumentUploadSameFileMultipleTimes(t *testing.T) {
 			)
 			req.Header.Set("Content-Type", writer.FormDataContentType())
 
-			token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com")
+			token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com", 1)
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 			w := httptest.NewRecorder()
@@ -170,7 +170,7 @@ func TestListDocuments(t *testing.T) {
 			req := httptest.NewRequest("GET", "/api/v1/documents", nil)
 
 			if tt.hasAuth {
-				token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com")
+				token, _ := ts.TokenProvider.GenerateToken(userID, "user@example.com", 1)
 				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 			}
 

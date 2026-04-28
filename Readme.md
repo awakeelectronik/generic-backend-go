@@ -1,204 +1,213 @@
+# generic-backend-go
 
-```markdown
-#  Clean Architecture Backend
+Plantilla de backend en Go (Clean Architecture) con auth, verificación por
+correo/teléfono, refresh-token con rotación y revocación por `token_version`,
+referidos opt-in, admin único y helpers transaccionales.
 
-## Instalación
+Pensado como base reusable: cada clonación parametriza su marca, MTA y
+credenciales de admin por env y queda lista para añadir su dominio propio.
 
-### Requisitos
+## Requisitos
+
 - Go 1.21+
 - MySQL 8.0+
+- (Producción) Postfix u otro MTA local accesible vía `/usr/sbin/sendmail`
 
-### Pasos
-
-1. **Clonar y configurar**
-```bash
-git clone https://github.com/awakeelectronik/sumabitcoin-backend.git
-cd sumabitcoin-backend
-nano .env
-```
+## Setup
 
 ```bash
-# Environment
-ENVIRONMENT=development
-PORT=8080
-BASE_URL=http://localhost:8080
-
-# Database
-DB_HOST=
-DB_PORT=3306
-DB_USER=
-DB_PASSWORD=
-DB_NAME=
-DB_MAX_CONN=3
-DB_IDLE_CONN=5
-
-# JWT
-JWT_SECRET=
-JWT_EXPIRATION=24
-JWT_REFRESH=168
-
-# Storage
-STORAGE_PATH=./uploads-suma
-MAX_FILE_SIZE=5242880
-```
-
-
-2. **Instalar dependencias**
-```bash
+git clone https://github.com/awakeelectronik/generic-backend-go.git
+cd generic-backend-go
+cp .env.example .env  # ajusta los valores
 make install
-```
-
-3. **Configurar BD**
-```bash
-# Crear base de datos MySQL
-mysql -u root -p
-> CREATE DATABASE sumabitcoin;
-```
-
-4. **Ejecutar**
-```bash
 make run
 ```
 
-## API Endpoints
+## Variables de entorno
 
-**Login**
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{ "email": "user@example.com",  "password": "SecurePass123!" }'
+### Server / DB / JWT
+
+| Variable | Default | Notas |
+|---|---|---|
+| `ENVIRONMENT` | `development` | |
+| `PORT` | `8080` | |
+| `BASE_URL` | `http://localhost:8080` | |
+| `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | — | |
+| `DB_MAX_CONN` | `25` | |
+| `DB_IDLE_CONN` | `5` | |
+| `JWT_SECRET` | — (obligatorio) | |
+| `JWT_EXPIRATION` | `24` (horas) | access token |
+| `JWT_REFRESH` | `8760` (horas, 1 año) | refresh rota en cada uso |
+| `STORAGE_PATH` | `./uploads` | |
+| `MAX_FILE_SIZE` | `5242880` (5 MiB) | |
+
+### Branding (parametriza cada clonación)
+
+| Variable | Default | Notas |
+|---|---|---|
+| `APP_NAME` | `MyApp` | aparece en `From`, asunto y `<h2>` del HTML del correo |
+| `APP_BRAND_COLOR` | `#000000` | hex usado como acento en el HTML |
+
+### Email
+
+| Variable | Default | Notas |
+|---|---|---|
+| `SMTP_FROM` | `noreply@app.local` | usado como envelope sender y header `From` |
+| `SMTP_HOST` / `SMTP_PORT` | `localhost` / `25` | informativos; el envío real lo hace el MTA local vía `sendmail` |
+| `EMAIL_NOOP` | `false` | `true` desactiva el envío (tests, dev sin MTA) |
+
+### Admin (opcional)
+
+Si los tres están configurados, se siembra un usuario admin (idempotente). Si
+falta cualquiera, no se siembra y solo se loguea un warning. **No hay hash por
+defecto** — generá el tuyo con `htpasswd` o equivalente.
+
+| Variable | Default |
+|---|---|
+| `ADMIN_EMAIL` | `""` |
+| `ADMIN_PHONE` | `""` |
+| `ADMIN_NAME` | `Admin` |
+| `ADMIN_PASSWORD_HASH` | `""` (bcrypt; ej. `htpasswd -nbBC 10 "" "tu_password"`) |
+
+### Referidos (opt-in)
+
+| Variable | Default | Notas |
+|---|---|---|
+| `REQUIRE_REFERRAL` | `false` | `true`: `referral_code` obligatorio en `/auth/register`. Las tablas `user_referral_codes` y `user_referrals` se crean siempre. |
+
+## Endpoints
+
+Todas las rutas viven bajo `/api/v1`. Las rutas marcadas como protegidas
+requieren `Authorization: Bearer <token>`.
+
+### Auth (públicas)
+
+| Método | Ruta | Notas |
+|---|---|---|
+| POST | `/auth/register` | acepta `email` y/o `phone`; `referral_code` opcional o requerido según `REQUIRE_REFERRAL` |
+| POST | `/auth/login` | si el usuario no está verificado responde 403 con `data: { user_id, email }` |
+| POST | `/auth/refresh` | rota el refresh token y revisa `token_version` |
+| POST | `/auth/check-availability` | rate-limited 10/min |
+| POST | `/auth/check-referral` | rate-limited 10/min |
+| POST | `/auth/verify-code` | rate-limited 20/min |
+| POST | `/auth/resend-verification-code` | exige `user_id+password`; 429 si excede |
+| POST | `/auth/forgot-password` | rate-limited 5/min |
+| POST | `/auth/reset-password` | re-emite tokens con `token_version+1` |
+
+### Auth (protegidas)
+
+| Método | Ruta | Notas |
+|---|---|---|
+| POST | `/auth/change-password` | bumpea `token_version`; devuelve nuevos tokens |
+
+### Users (protegidas)
+
+| Método | Ruta |
+|---|---|
+| GET | `/users/profile` |
+| GET | `/users/:id` |
+| PUT | `/users/:id` |
+| DELETE | `/users/:id` |
+
+### Documents (protegidas)
+
+| Método | Ruta |
+|---|---|
+| POST | `/documents/upload` |
+| GET | `/documents` |
+
+### Admin (protegidas + AdminChecker)
+
+| Método | Ruta |
+|---|---|
+| GET | `/admin/users` (paginado, `q`, summary global) |
+
+### Health
+
+| Método | Ruta |
+|---|---|
+| GET | `/health` |
+
+## Arquitectura
+
+```
+internal/
+  application/      use cases + ports (interfaces)
+    auth/           register, login, refresh, verify, forgot/reset/change password, resend, check-referral
+    user/           list (admin)
+    document/       upload, list, get
+  domain/           entidades sin dependencias externas
+  config/           Config + Dependencies (composition root)
+  infrastructure/
+    http/           handlers, middleware, routes
+    persistence/    mysql repos, transaction_runner, local_storage
+    security/       JWT, bcrypt, AdminChecker, VerificationService
+    email/          SMTPSender (sendmail), NoopSender
+pkg/
+  errors/           AppError con Data + sentinels
+  httptime/         RFC3339 en America/Bogota
+test/
+  integration/      tests con MySQL real (TEST_DB_*)
+  unit/             tests sin BD
 ```
 
-**Refresh Token**
+### Atomicidad
 
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/refresh -H "Content-Type: application/json" -d '{ "refresh_token":  "token" }'
+`mysql.TransactionRunner` (interfaz `application.TransactionRunner`) abre una
+transacción y la inyecta en `context.Context`. Los repos leen la tx con
+`dbFrom`/`execContextFrom`, así que un caso de uso compone llamadas de
+varios repos bajo una misma transacción sin tocar la implementación de los
+repos:
+
+```go
+err := txRunner.WithTransaction(ctx, func(txCtx context.Context) error {
+    if err := userRepo.Update(txCtx, u); err != nil { return err }
+    return otherRepo.Insert(txCtx, x)
+})
 ```
 
+### Revocación de sesión
 
-### Usuarios (Protegidos)
+Cada usuario tiene un `token_version`. Los JWT lo embeben como claim; el
+middleware lo compara contra el valor en BD en cada request. `change-password`
+y `reset-password` lo incrementan via `UpdatePasswordAndBumpTokenVersion`,
+revocando todos los tokens emitidos antes.
 
-**Obtener perfil**
+### Verificación de contacto
 
-```bash
-curl -v -X GET http://localhost:8080/api/v1/users/402e59cb-cfe0-4c8a-8634-3614d29cf450   -H "Authorization: Bearer token"
-```
-
-**Actualizar perfil**
-```bash
-PUT /api/v1/users/:id
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "name": "Nuevo Name",
-  "phone": "+573009876543"
-}
-```
-
-**Eliminar cuenta**
-```bash
-DELETE /api/v1/users/:id
-Authorization: Bearer <token>
-```
-
-### Documentos (Protegidos)
-
-**Subir documento**
-```bash
-POST /api/v1/documents/upload
-Authorization: Bearer <token>
-Content-Type: multipart/form-data
-
-Form Data:
-- document: <archivo.jpg>
-```
-
-**Listar documentos**
-```bash
-GET /api/v1/documents?limit=10&offset=0
-Authorization: Bearer <token>
-```
-
-**Obtener documento**
-```bash
-GET /api/v1/documents/:id
-Authorization: Bearer <token>
-```
-
-## Testing con cURL
-
-```bash
-# Health check
-curl http://localhost:8080/health
-
-# Registrarse
-curl -X POST http://localhost:8080/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "SecurePass123!",
-    "name": "Test User",
-    "phone": "+573001234567"
-  }'
-
-# Login
-curl -s -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "phone": "+573001234567",
-    "password": "SecurePass123!"
-  }'
-
-# Subir documento
-curl -X POST http://localhost:8080/api/v1/documents/upload -H "Authorization: Bearer token" -F "document=@a.jpeg"
-
-# Listar documentos
-curl -X GET "http://localhost:8080/api/v1/documents?limit=10&offset=0" \
--H "Authorization: Bearer token"
-```
-
+`VerificationService` genera un código de 4 dígitos con `crypto/rand`,
+lo entrega a email y/o teléfono (mismo código a ambos si el usuario tiene los
+dos), aplica rate limit (5/h con 8s mínimo entre envíos) y cae a logging del
+código en consola para SMS no implementado. La plantilla HTML usa
+`APP_NAME` y `APP_BRAND_COLOR`.
 
 ## Desarrollo
 
 ```bash
-# Ejecutar tests
-make test
+make test       # corre tests
+make lint       # vet + linting si está configurado
+make build      # binario en ./generic-backend-go
+make run        # arranca con go run
+```
 
-# Linting
-make lint
+Para tests de integración con MySQL real:
 
-# Compilar
-make build
-
-# Ejecutar binario compilado
-./sumabitcoin
+```bash
+TEST_DB_HOST=127.0.0.1 TEST_DB_USER=root TEST_DB_PASS=password \
+TEST_DB_NAME=generictest \
+go test ./test/integration/...
 ```
 
 ## Notas
 
-- Los archivos se guardan en `./uploads`
-- Los logs se muestran en stdout
-- Las contraseñas se hashean con bcrypt
-- Los tokens JWT expiran en 24 horas
-- Los refresh tokens expiran en 7 días
+- Las fechas en respuestas se formatean en `America/Bogota` (RFC3339) por
+  convención del autor; cambiar `pkg/httptime` si tu deployment vive en otra zona.
+- Los archivos subidos se guardan en `STORAGE_PATH/<userID>/<UUID>.<ext>`.
+- Los logs salen a stdout en JSON estructurado.
+- Las contraseñas se hashean con bcrypt.
+- Los códigos de verificación viven en memoria; reemplazar por Redis/DB para
+  multi-instancia o tolerancia a reinicios.
 
+## Licencia
 
-Creado con ❤️ usando Go y Clean Architecture
-
-
-**Instalar dependencias:**
-```bash
-go mod download
-go mod tidy
-```
-
-**Configurar .env:**
-```bash
-cp .env.example .env
-# Editar .env con tus datos
-```
-
-**Ejecutar:**
-```bash
-go run ./cmd/main.go
-```
-
+MIT.

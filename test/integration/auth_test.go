@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/security"
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
