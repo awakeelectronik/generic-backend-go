@@ -78,7 +78,15 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOu
 	// Check if user is verified
 	if !user.Verified {
 		uc.logger.WithFields(logrus.Fields{"user_id": user.ID, "email": input.Email, "phone": input.Phone}).Warn("Login failed: user not verified")
-		return nil, appErrors.NewAppError("UNVERIFIED_USER", "Usuario no verificado. Complete la verificación primero.", 403)
+		return nil, appErrors.NewAppErrorWithData(
+			"UNVERIFIED_USER",
+			"Usuario no verificado. Verifica tu correo o teléfono primero.",
+			403,
+			map[string]string{
+				"user_id": user.ID,
+				"email":   user.Email,
+			},
+		)
 	}
 
 	// Generate tokens

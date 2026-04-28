@@ -99,7 +99,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	// ========== USE CASES ==========
 	registerUC := authUC.NewRegisterUseCase(userRepo, passwordHasher, verificationService, logger)
 	loginUC := authUC.NewLoginUseCase(userRepo, passwordHasher, tokenProvider, logger)
-	refreshUC := authUC.NewRefreshUseCase(tokenProvider, logger)
+	refreshUC := authUC.NewRefreshUseCase(userRepo, tokenProvider, logger)
 	checkAvailabilityUC := authUC.NewCheckAvailabilityUseCase(userRepo, logger)
 	verifyCodeUC := authUC.NewVerifyCodeUseCase(userRepo, tokenProvider, verificationService, logger)
 

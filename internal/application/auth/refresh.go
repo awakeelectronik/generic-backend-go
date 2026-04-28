@@ -13,19 +13,23 @@ type RefreshInput struct {
 }
 
 type RefreshOutput struct {
-	Token string `json:"token"`
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type RefreshUseCase struct {
+	userRepo      application.UserRepository
 	tokenProvider application.TokenProvider
 	logger        *logrus.Logger
 }
 
 func NewRefreshUseCase(
+	userRepo application.UserRepository,
 	tp application.TokenProvider,
 	logger *logrus.Logger,
 ) *RefreshUseCase {
 	return &RefreshUseCase{
+		userRepo:      userRepo,
 		tokenProvider: tp,
 		logger:        logger,
 	}
@@ -40,13 +44,29 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Ref
 		return nil, appErrors.ErrUnauthorized
 	}
 
-	token, err := uc.tokenProvider.GenerateToken(userID, "", tokenVersion)
+	user, err := uc.userRepo.GetByID(ctx, userID)
+	if err != nil || user == nil {
+		uc.logger.WithError(err).Warn("User not found during refresh")
+		return nil, appErrors.ErrUnauthorized
+	}
+	if user.TokenVersion != tokenVersion {
+		uc.logger.WithField("user_id", userID).Warn("Refresh token revoked")
+		return nil, appErrors.ErrUnauthorized
+	}
+
+	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, user.TokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate new token")
 		return nil, appErrors.ErrInternalServer
 	}
 
+	newRefreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, user.TokenVersion)
+	if err != nil {
+		uc.logger.WithError(err).Error("Failed to generate new refresh token")
+		return nil, appErrors.ErrInternalServer
+	}
+
 	uc.logger.WithField("user_id", userID).Info("Token refreshed successfully")
 
-	return &RefreshOutput{Token: token}, nil
+	return &RefreshOutput{Token: token, RefreshToken: newRefreshToken}, nil
 }

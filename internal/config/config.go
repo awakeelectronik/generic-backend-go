@@ -88,8 +88,11 @@ func Load() (*Config, error) {
 		JWT: JWTConfig{
 			Secret:          getEnv("JWT_SECRET", ""),
 			ExpirationHours: getEnvInt("JWT_EXPIRATION", 24),
-			RefreshHours:    getEnvInt("JWT_REFRESH", 168),
-			IssuerName:      "identity-api",
+			// 8760h = 1 año. Como /auth/refresh rota el refresh en cada uso,
+			// la sesión se mantiene viva mientras el usuario abra la app
+			// al menos una vez al año.
+			RefreshHours: getEnvInt("JWT_REFRESH", 8760),
+			IssuerName:   "identity-api",
 		},
 		Storage: StorageConfig{
 			Type:         "local",
