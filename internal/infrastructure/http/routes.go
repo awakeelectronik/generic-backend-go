@@ -30,6 +30,10 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 				middleware.RateLimitMiddleware(10, time.Minute),
 				deps.AuthHandler.CheckAvailability)
 
+			auth.POST("/check-referral",
+				middleware.RateLimitMiddleware(10, time.Minute),
+				deps.AuthHandler.CheckReferral)
+
 			auth.POST("/verify-code",
 				middleware.RateLimitMiddleware(20, time.Minute),
 				deps.AuthHandler.VerifyCode)

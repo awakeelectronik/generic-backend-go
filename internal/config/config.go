@@ -18,6 +18,14 @@ type Config struct {
 	Email    EmailConfig
 	Brand    BrandConfig
 	Admin    AdminConfig
+	Auth     AuthConfig
+}
+
+// AuthConfig toggles auth-flow behaviors that vary across deployments.
+type AuthConfig struct {
+	// RequireReferral makes the referral_code field mandatory in /auth/register.
+	// false → optional (validated only if provided).
+	RequireReferral bool
 }
 
 // AdminConfig holds the credentials of the single admin user. If any of these
@@ -128,6 +136,9 @@ func Load() (*Config, error) {
 			Phone:        getEnv("ADMIN_PHONE", ""),
 			Name:         getEnv("ADMIN_NAME", "Admin"),
 			PasswordHash: getEnv("ADMIN_PASSWORD_HASH", ""),
+		},
+		Auth: AuthConfig{
+			RequireReferral: getEnvBool("REQUIRE_REFERRAL", false),
 		},
 	}
 

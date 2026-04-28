@@ -17,8 +17,10 @@ import (
 
 type Dependencies struct {
 	// Repositories
-	UserRepo     application.UserRepository
-	DocumentRepo application.DocumentRepository
+	UserRepo         application.UserRepository
+	DocumentRepo     application.DocumentRepository
+	ReferralCodeRepo application.ReferralCodeRepository
+	UserReferralRepo application.UserReferralRepository
 
 	// Storage
 	FileStorage application.FileStorage
@@ -86,6 +88,8 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	// ========== REPOSITORIES ==========
 	userRepo := mysql.NewUserRepository(db)
 	documentRepo := mysql.NewDocumentRepository(db)
+	referralCodeRepo := mysql.NewReferralCodeRepository(db)
+	userReferralRepo := mysql.NewUserReferralRepository(db)
 
 	// ========== PERSISTENCE HELPERS ==========
 	txRunner := mysql.NewTransactionRunner(db)
@@ -113,7 +117,8 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	adminChecker := security.NewAdminChecker(cfg.Admin.Email, cfg.Admin.Phone)
 
 	// ========== USE CASES ==========
-	registerUC := authUC.NewRegisterUseCase(userRepo, passwordHasher, verificationService, logger)
+	registerUC := authUC.NewRegisterUseCase(userRepo, referralCodeRepo, userReferralRepo, passwordHasher, verificationService, cfg.Auth.RequireReferral, logger)
+	checkReferralUC := authUC.NewCheckReferralUseCase(userRepo, referralCodeRepo, userReferralRepo, logger)
 	loginUC := authUC.NewLoginUseCase(userRepo, passwordHasher, tokenProvider, logger)
 	refreshUC := authUC.NewRefreshUseCase(userRepo, tokenProvider, logger)
 	checkAvailabilityUC := authUC.NewCheckAvailabilityUseCase(userRepo, logger)
@@ -134,6 +139,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		loginUC,
 		refreshUC,
 		checkAvailabilityUC,
+		checkReferralUC,
 		verifyCodeUC,
 		resendVerificationUC,
 		forgotPasswordUC,
@@ -148,6 +154,8 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	return &Dependencies{
 		UserRepo:            userRepo,
 		DocumentRepo:        documentRepo,
+		ReferralCodeRepo:    referralCodeRepo,
+		UserReferralRepo:    userReferralRepo,
 		FileStorage:         fileStorage,
 		PasswordHasher:      passwordHasher,
 		TokenProvider:       tokenProvider,

@@ -14,6 +14,7 @@ type AuthHandler struct {
 	loginUC              *auth.LoginUseCase
 	refreshUC            *auth.RefreshUseCase
 	checkAvailabilityUC  *auth.CheckAvailabilityUseCase
+	checkReferralUC      *auth.CheckReferralUseCase
 	verifyCodeUC         *auth.VerifyCodeUseCase
 	resendVerificationUC *auth.ResendVerificationUseCase
 	forgotPasswordUC     *auth.ForgotPasswordUseCase
@@ -27,6 +28,7 @@ func NewAuthHandler(
 	loginUC *auth.LoginUseCase,
 	refreshUC *auth.RefreshUseCase,
 	checkAvailabilityUC *auth.CheckAvailabilityUseCase,
+	checkReferralUC *auth.CheckReferralUseCase,
 	verifyCodeUC *auth.VerifyCodeUseCase,
 	resendVerificationUC *auth.ResendVerificationUseCase,
 	forgotPasswordUC *auth.ForgotPasswordUseCase,
@@ -39,6 +41,7 @@ func NewAuthHandler(
 		loginUC:              loginUC,
 		refreshUC:            refreshUC,
 		checkAvailabilityUC:  checkAvailabilityUC,
+		checkReferralUC:      checkReferralUC,
 		verifyCodeUC:         verifyCodeUC,
 		resendVerificationUC: resendVerificationUC,
 		forgotPasswordUC:     forgotPasswordUC,
@@ -46,6 +49,24 @@ func NewAuthHandler(
 		changePasswordUC:     changePasswordUC,
 		logger:               logger,
 	}
+}
+
+func (h *AuthHandler) CheckReferral(c *gin.Context) {
+	var req auth.CheckReferralInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Referral check validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", ValidationMessageES(err))
+		return
+	}
+
+	output, err := h.checkReferralUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {

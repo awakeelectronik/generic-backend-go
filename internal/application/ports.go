@@ -23,6 +23,18 @@ type UserRepository interface {
 	ListWithSummary(ctx context.Context, limit, offset int, q string) (users []*domain.User, total int, active int, inactive int, err error)
 }
 
+type ReferralCodeRepository interface {
+	GetByCode(ctx context.Context, code string) (*domain.ReferralCode, error)
+	GetByUserID(ctx context.Context, userID string) (*domain.ReferralCode, error)
+	Create(ctx context.Context, code *domain.ReferralCode) error
+}
+
+type UserReferralRepository interface {
+	Create(ctx context.Context, referral *domain.UserReferral) error
+	GetByUserID(ctx context.Context, userID string) (*domain.UserReferral, error)
+	CountByReferrer(ctx context.Context, referrerUserID string) (int, error)
+}
+
 type DocumentRepository interface {
 	Create(ctx context.Context, doc *domain.Document) error
 	GetByID(ctx context.Context, id string) (*domain.Document, error)

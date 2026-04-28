@@ -98,6 +98,26 @@ func RunMigrations(db *sql.DB) error {
 			INDEX idx_action (action),
 			INDEX idx_created_at (created_at)
 		)`,
+		// Referral tables: always created so the feature can be toggled at runtime
+		// (REQUIRE_REFERRAL). Cost is two empty tables when unused.
+		`CREATE TABLE IF NOT EXISTS user_referral_codes (
+			user_id VARCHAR(36) PRIMARY KEY,
+			code VARCHAR(6) UNIQUE NOT NULL,
+			max_referrals INT NOT NULL DEFAULT 1,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+			INDEX idx_referral_code (code)
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_referrals (
+			id VARCHAR(36) PRIMARY KEY,
+			user_id VARCHAR(36) UNIQUE NOT NULL,
+			referrer_user_id VARCHAR(36) NOT NULL,
+			code_used VARCHAR(6) NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+			FOREIGN KEY (referrer_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+			INDEX idx_referrer_user_id (referrer_user_id)
+		)`,
 	}
 
 	for _, migration := range migrations {
