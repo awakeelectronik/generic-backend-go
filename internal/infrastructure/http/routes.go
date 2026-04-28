@@ -72,9 +72,9 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 			documents.GET("", deps.DocumentHandler.List)
 		}
 
-		// Admin routes — protect at the route level. Currently any authenticated
-		// user could call this; PR 13 adds AdminChecker to gate it properly.
+		// Admin routes — gated by AdminChecker (single admin by email+phone).
 		admin := protected.Group("/admin")
+		admin.Use(middleware.AdminMiddleware(deps.AdminChecker, deps.UserRepo))
 		{
 			admin.GET("/users", deps.UserHandler.List)
 		}

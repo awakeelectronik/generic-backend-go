@@ -80,3 +80,9 @@ type EmailSender interface {
 type TransactionRunner interface {
 	WithTransaction(ctx context.Context, fn func(context.Context) error) error
 }
+
+// AdminChecker indica si un usuario es administrador de la aplicación.
+// La implementación concreta (p. ej. por email+teléfono) vive en infraestructura.
+type AdminChecker interface {
+	IsAdmin(user *domain.User) bool
+}

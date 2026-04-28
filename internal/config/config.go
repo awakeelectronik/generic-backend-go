@@ -17,6 +17,19 @@ type Config struct {
 	Storage  StorageConfig
 	Email    EmailConfig
 	Brand    BrandConfig
+	Admin    AdminConfig
+}
+
+// AdminConfig holds the credentials of the single admin user. If any of these
+// are empty, the admin is NOT seeded and AdminChecker.IsAdmin always returns
+// false. Each clone of this template fills these in via .env. There is no
+// hardcoded default password — keep it that way to avoid baking known
+// credentials into a public repo.
+type AdminConfig struct {
+	Email        string
+	Phone        string
+	Name         string
+	PasswordHash string // bcrypt hash; NEVER store plaintext here.
 }
 
 // BrandConfig holds the per-deployment identity used in emails and other
@@ -109,6 +122,12 @@ func Load() (*Config, error) {
 		Brand: BrandConfig{
 			AppName:  getEnv("APP_NAME", "MyApp"),
 			BrandHex: getEnv("APP_BRAND_COLOR", "#000000"),
+		},
+		Admin: AdminConfig{
+			Email:        getEnv("ADMIN_EMAIL", ""),
+			Phone:        getEnv("ADMIN_PHONE", ""),
+			Name:         getEnv("ADMIN_NAME", "Admin"),
+			PasswordHash: getEnv("ADMIN_PASSWORD_HASH", ""),
 		},
 	}
 

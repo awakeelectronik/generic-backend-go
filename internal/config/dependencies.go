@@ -27,6 +27,7 @@ type Dependencies struct {
 	PasswordHasher      application.PasswordHasher
 	TokenProvider       application.TokenProvider
 	VerificationService application.VerificationService
+	AdminChecker        application.AdminChecker
 
 	// External services
 	EmailSender application.EmailSender
@@ -69,6 +70,19 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 
 	logger.Info("✅ Database connected and migrated")
 
+	// Optional admin seed: only when all three envs (email, phone, password_hash)
+	// are configured. No hardcoded fallback password.
+	if cfg.Admin.Email != "" && cfg.Admin.Phone != "" && cfg.Admin.PasswordHash != "" {
+		created, err := mysql.SeedAdminUser(db, cfg.Admin.Email, cfg.Admin.Phone, cfg.Admin.Name, cfg.Admin.PasswordHash)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to seed admin user")
+		} else if created {
+			logger.WithField("email", cfg.Admin.Email).Info("✅ Admin user seeded")
+		}
+	} else {
+		logger.Warn("Admin not seeded: set ADMIN_EMAIL, ADMIN_PHONE and ADMIN_PASSWORD_HASH to enable")
+	}
+
 	// ========== REPOSITORIES ==========
 	userRepo := mysql.NewUserRepository(db)
 	documentRepo := mysql.NewDocumentRepository(db)
@@ -96,6 +110,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		cfg.JWT.IssuerName,
 	)
 	verificationService := security.NewVerificationService(emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger)
+	adminChecker := security.NewAdminChecker(cfg.Admin.Email, cfg.Admin.Phone)
 
 	// ========== USE CASES ==========
 	registerUC := authUC.NewRegisterUseCase(userRepo, passwordHasher, verificationService, logger)
@@ -137,6 +152,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		PasswordHasher:      passwordHasher,
 		TokenProvider:       tokenProvider,
 		VerificationService: verificationService,
+		AdminChecker:        adminChecker,
 		EmailSender:         emailSender,
 		TxRunner:            txRunner,
 		AuthHandler:         authHandler,
