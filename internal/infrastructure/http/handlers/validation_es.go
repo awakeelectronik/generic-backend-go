@@ -26,6 +26,8 @@ func ValidationMessageES(err error) string {
 			return "El correo electrónico no es válido"
 		case "min":
 			return fmt.Sprintf("El campo %s debe tener al menos %s caracteres", field, fe.Param())
+		case "max":
+			return fmt.Sprintf("El campo %s debe tener máximo %s caracteres", field, fe.Param())
 		case "len":
 			if field == "teléfono" {
 				return "El teléfono debe tener 10 dígitos"
@@ -67,6 +69,10 @@ func fieldLabelES(field string) string {
 		return "código"
 	case "RefreshToken":
 		return "token de actualización"
+	case "CurrentPassword":
+		return "contraseña actual"
+	case "NewPassword":
+		return "contraseña nueva"
 	default:
 		// best effort: split CamelCase -> words
 		return strings.ToLower(field)

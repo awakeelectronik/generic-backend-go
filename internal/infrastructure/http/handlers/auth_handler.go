@@ -10,12 +10,16 @@ import (
 )
 
 type AuthHandler struct {
-	registerUC          *auth.RegisterUseCase
-	loginUC             *auth.LoginUseCase
-	refreshUC           *auth.RefreshUseCase
-	checkAvailabilityUC *auth.CheckAvailabilityUseCase
-	verifyCodeUC        *auth.VerifyCodeUseCase
-	logger              *logrus.Logger
+	registerUC           *auth.RegisterUseCase
+	loginUC              *auth.LoginUseCase
+	refreshUC            *auth.RefreshUseCase
+	checkAvailabilityUC  *auth.CheckAvailabilityUseCase
+	verifyCodeUC         *auth.VerifyCodeUseCase
+	resendVerificationUC *auth.ResendVerificationUseCase
+	forgotPasswordUC     *auth.ForgotPasswordUseCase
+	resetPasswordUC      *auth.ResetPasswordUseCase
+	changePasswordUC     *auth.ChangePasswordUseCase
+	logger               *logrus.Logger
 }
 
 func NewAuthHandler(
@@ -24,15 +28,23 @@ func NewAuthHandler(
 	refreshUC *auth.RefreshUseCase,
 	checkAvailabilityUC *auth.CheckAvailabilityUseCase,
 	verifyCodeUC *auth.VerifyCodeUseCase,
+	resendVerificationUC *auth.ResendVerificationUseCase,
+	forgotPasswordUC *auth.ForgotPasswordUseCase,
+	resetPasswordUC *auth.ResetPasswordUseCase,
+	changePasswordUC *auth.ChangePasswordUseCase,
 	logger *logrus.Logger,
 ) *AuthHandler {
 	return &AuthHandler{
-		registerUC:          registerUC,
-		loginUC:             loginUC,
-		refreshUC:           refreshUC,
-		checkAvailabilityUC: checkAvailabilityUC,
-		verifyCodeUC:        verifyCodeUC,
-		logger:              logger,
+		registerUC:           registerUC,
+		loginUC:              loginUC,
+		refreshUC:            refreshUC,
+		checkAvailabilityUC:  checkAvailabilityUC,
+		verifyCodeUC:         verifyCodeUC,
+		resendVerificationUC: resendVerificationUC,
+		forgotPasswordUC:     forgotPasswordUC,
+		resetPasswordUC:      resetPasswordUC,
+		changePasswordUC:     changePasswordUC,
+		logger:               logger,
 	}
 }
 
@@ -163,6 +175,91 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 		default:
 			ErrorResponse(c, http.StatusInternalServerError, "VERIFICATION_ERROR", "Error al verificar código")
 		}
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
+}
+
+func (h *AuthHandler) ResendVerificationCode(c *gin.Context) {
+	var req auth.ResendVerificationInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Resend verification validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", ValidationMessageES(err))
+		return
+	}
+
+	output, err := h.resendVerificationUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
+}
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req auth.ForgotPasswordInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Forgot password validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", ValidationMessageES(err))
+		return
+	}
+
+	output, err := h.forgotPasswordUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req auth.ResetPasswordInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Reset password validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", ValidationMessageES(err))
+		return
+	}
+
+	output, err := h.resetPasswordUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		h.logger.WithError(err).Warn("Reset password failed")
+		switch err.Error() {
+		case "no verification code found for user":
+			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación no encontrado")
+		case "verification code already used":
+			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación ya utilizado")
+		case "verification code expired":
+			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación expirado")
+		case "invalid verification code":
+			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación inválido")
+		default:
+			HandleError(c, err)
+		}
+		return
+	}
+
+	SuccessResponse(c, http.StatusOK, output)
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req auth.ChangePasswordInput
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.WithError(err).Warn("Change password validation error")
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", ValidationMessageES(err))
+		return
+	}
+
+	req.UserID = c.GetString("user_id")
+	output, err := h.changePasswordUC.Execute(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
 		return
 	}
 

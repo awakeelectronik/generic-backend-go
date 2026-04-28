@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	"github.com/awakeelectronik/generic-backend-go/internal/domain"
@@ -90,13 +91,16 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 		return nil, appErrors.NewAppErrorWithInternal("CREATE_ERROR", "Error creating user", 500, err)
 	}
 
-	// Send verification code
-	destination := user.Email
-	if user.Phone != "" {
-		destination = user.Phone
+	// Send verification code (mismo código a correo y teléfono si ambos existen)
+	var destinations []string
+	if strings.TrimSpace(user.Email) != "" {
+		destinations = append(destinations, user.Email)
+	}
+	if strings.TrimSpace(user.Phone) != "" {
+		destinations = append(destinations, user.Phone)
 	}
 
-	if err := uc.verificationSvc.SendVerificationCode(user.ID, destination); err != nil {
+	if err := uc.verificationSvc.SendVerificationCodeToDestinations(user.ID, destinations); err != nil {
 		// Log error but don't fail registration - user can request new code later
 		uc.logger.WithError(err).WithField("user_id", user.ID).Warn("Failed to send verification code during registration")
 	}

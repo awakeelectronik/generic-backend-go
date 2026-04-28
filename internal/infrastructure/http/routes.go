@@ -15,19 +15,43 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 	{
 		auth := api.Group("/auth")
 		{
-			auth.POST("/register", deps.AuthHandler.Register)
-			auth.POST("/login", deps.AuthHandler.Login)
-			auth.POST("/refresh", deps.AuthHandler.Refresh)
+			// Brute-force guards on credential endpoints (30/min/IP).
+			auth.POST("/register",
+				middleware.RateLimitMiddleware(30, time.Minute),
+				deps.AuthHandler.Register)
+			auth.POST("/login",
+				middleware.RateLimitMiddleware(30, time.Minute),
+				deps.AuthHandler.Login)
+			auth.POST("/refresh",
+				middleware.RateLimitMiddleware(30, time.Minute),
+				deps.AuthHandler.Refresh)
 
-			// Rate limited endpoint: max 10 requests per minute
-			// Checks if email or phone is available for registration
 			auth.POST("/check-availability",
 				middleware.RateLimitMiddleware(10, time.Minute),
 				deps.AuthHandler.CheckAvailability)
 
-			// Verify code after registration
-			auth.POST("/verify-code", deps.AuthHandler.VerifyCode)
+			auth.POST("/verify-code",
+				middleware.RateLimitMiddleware(20, time.Minute),
+				deps.AuthHandler.VerifyCode)
+
+			auth.POST("/resend-verification-code",
+				middleware.RateLimitMiddleware(10, time.Minute),
+				deps.AuthHandler.ResendVerificationCode)
+
+			auth.POST("/forgot-password",
+				middleware.RateLimitMiddleware(5, time.Minute),
+				deps.AuthHandler.ForgotPassword)
+			auth.POST("/reset-password",
+				middleware.RateLimitMiddleware(5, time.Minute),
+				deps.AuthHandler.ResetPassword)
 		}
+	}
+
+	// Protected auth routes (require valid token)
+	protectedAuth := api.Group("/auth")
+	protectedAuth.Use(middleware.AuthMiddleware(deps.TokenProvider, deps.UserRepo))
+	{
+		protectedAuth.POST("/change-password", deps.AuthHandler.ChangePassword)
 	}
 
 	// Protected routes

@@ -102,12 +102,27 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	refreshUC := authUC.NewRefreshUseCase(userRepo, tokenProvider, logger)
 	checkAvailabilityUC := authUC.NewCheckAvailabilityUseCase(userRepo, logger)
 	verifyCodeUC := authUC.NewVerifyCodeUseCase(userRepo, tokenProvider, verificationService, logger)
+	resendVerificationUC := authUC.NewResendVerificationUseCase(userRepo, passwordHasher, verificationService, logger)
+	forgotPasswordUC := authUC.NewForgotPasswordUseCase(userRepo, verificationService, logger)
+	resetPasswordUC := authUC.NewResetPasswordUseCase(userRepo, passwordHasher, verificationService, tokenProvider, logger)
+	changePasswordUC := authUC.NewChangePasswordUseCase(userRepo, passwordHasher, tokenProvider, logger)
 
 	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, logger)
 	listDocUC := docUC.NewListDocumentsUseCase(documentRepo, logger)
 
 	// ========== HANDLERS ==========
-	authHandler := handlers.NewAuthHandler(registerUC, loginUC, refreshUC, checkAvailabilityUC, verifyCodeUC, logger)
+	authHandler := handlers.NewAuthHandler(
+		registerUC,
+		loginUC,
+		refreshUC,
+		checkAvailabilityUC,
+		verifyCodeUC,
+		resendVerificationUC,
+		forgotPasswordUC,
+		resetPasswordUC,
+		changePasswordUC,
+		logger,
+	)
 	userHandler := handlers.NewUserHandler(userRepo, logger)
 	documentHandler := handlers.NewDocumentHandlerWithList(uploadDocUC, listDocUC, logger)
 
