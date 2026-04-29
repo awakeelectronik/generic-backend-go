@@ -20,9 +20,9 @@ type RegisterInput struct {
 	ReferralCode string `json:"referral_code" binding:"omitempty,len=6,alphanum"`
 }
 
-// Validate checks that at least email or phone is provided. Referral code
-// requirement is enforced in Execute based on the use case configuration so
-// the same struct works for both REQUIRE_REFERRAL=true and =false deployments.
+// Validate enforces inter-field rules that binding tags can't express
+// (at least one of email/phone must be present). Per-field shape rules
+// (lengths, formats) live in the binding tags above to avoid duplication.
 func (r *RegisterInput) Validate() error {
 	if r.Email == "" && r.Phone == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
@@ -40,6 +40,7 @@ type RegisterUseCase struct {
 	userRepo         application.UserRepository
 	referralCodeRepo application.ReferralCodeRepository
 	userReferralRepo application.UserReferralRepository
+	txRunner         application.TransactionRunner
 	passwordHasher   application.PasswordHasher
 	verificationSvc  application.VerificationService
 	requireReferral  bool
@@ -53,13 +54,16 @@ type RegisterUseCase struct {
 //   - false: referral_code is optional; if provided and valid, the link is
 //     recorded; if provided and invalid, register fails (avoid silent loss).
 //
-// The referral repos may be passed as functioning implementations even when
-// requireReferral is false; they remain idle until a code shows up in the
-// request.
+// The user-create + referral-link inserts run inside a single transaction
+// (txRunner): if anything in the chain fails, both rows are rolled back
+// atomically — no orphan signups, no soft-deleted rows squatting the email
+// UNIQUE index. The referral row is also gated by SELECT ... FOR UPDATE on
+// the code, so concurrent registers can't both pass MaxReferrals at the limit.
 func NewRegisterUseCase(
 	userRepo application.UserRepository,
 	referralCodeRepo application.ReferralCodeRepository,
 	userReferralRepo application.UserReferralRepository,
+	txRunner application.TransactionRunner,
 	ph application.PasswordHasher,
 	verificationSvc application.VerificationService,
 	requireReferral bool,
@@ -69,6 +73,7 @@ func NewRegisterUseCase(
 		userRepo:         userRepo,
 		referralCodeRepo: referralCodeRepo,
 		userReferralRepo: userReferralRepo,
+		txRunner:         txRunner,
 		passwordHasher:   ph,
 		verificationSvc:  verificationSvc,
 		requireReferral:  requireReferral,
@@ -77,31 +82,34 @@ func NewRegisterUseCase(
 }
 
 func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*RegisterOutput, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
 	uc.logger.WithFields(logrus.Fields{
 		"email":  input.Email,
 		"action": "register",
 	}).Info("User registration attempt")
 
-	// Check if user exists (only if email is provided)
+	// Pre-check de duplicados (rápido, antes de hashear). El UNIQUE de la BD
+	// es el guardia final para race conditions.
 	if input.Email != "" {
 		existing, _ := uc.userRepo.GetByEmail(ctx, input.Email)
 		if existing != nil {
-			uc.logger.WithField("email", input.Email).Warn("Registration failed: email already exists")
 			return nil, appErrors.NewConflictError("El correo electrónico")
 		}
 	}
-	// Check if user exists (only if phone is provided)
 	if input.Phone != "" {
 		existing, _ := uc.userRepo.GetByPhone(ctx, input.Phone)
 		if existing != nil {
-			uc.logger.WithField("phone", input.Phone).Warn("Registration failed: phone already exists")
 			return nil, appErrors.NewConflictError("El teléfono")
 		}
 	}
 
-	// Resolve referral (required vs optional vs absent).
+	// Resolución del referido fuera de tx — solo para feedback temprano
+	// (existencia del código). El chequeo definitivo del cupo ocurre dentro
+	// de la tx con FOR UPDATE.
 	referralCode := strings.ToUpper(strings.TrimSpace(input.ReferralCode))
-	var referrerID string
 	if uc.requireReferral && referralCode == "" {
 		return nil, appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar un código de referido", 400)
 	}
@@ -114,51 +122,58 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 		if codeEntry == nil {
 			return nil, appErrors.NewAppError("VALIDATION_ERROR", "El código de referido no es válido", 400)
 		}
-		referrer, err := uc.userRepo.GetByID(ctx, codeEntry.UserID)
-		if err != nil || referrer == nil {
-			return nil, appErrors.NewAppError("VALIDATION_ERROR", "El código de referido no es válido", 400)
-		}
-		referralCount, err := uc.userReferralRepo.CountByReferrer(ctx, referrer.ID)
-		if err != nil {
-			uc.logger.WithError(err).Error("Failed to count referrals")
-			return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error validando referidos", 500, err)
-		}
-		if referralCount >= codeEntry.MaxReferrals {
-			return nil, appErrors.NewAppError("CONFLICT", "El código de referido ya alcanzó su límite", 409)
-		}
-		referrerID = referrer.ID
 	}
 
-	// Hash password
 	hashedPassword, err := uc.passwordHasher.Hash(input.Password)
 	if err != nil {
 		uc.logger.WithError(err).Error("Password hashing failed")
 		return nil, appErrors.NewAppErrorWithInternal("HASH_ERROR", "Error processing password", 500, err)
 	}
 
-	// Create user
-	user := domain.NewUser(input.Email, hashedPassword, input.Name, input.Phone)
-
-	if err := uc.userRepo.Create(ctx, user); err != nil {
-		uc.logger.WithError(err).Error("Failed to create user")
-		return nil, appErrors.NewAppErrorWithInternal("CREATE_ERROR", "Error creating user", 500, err)
+	user, err := domain.NewUser(input.Email, hashedPassword, input.Name, input.Phone)
+	if err != nil {
+		return nil, appErrors.NewAppError("VALIDATION_ERROR", err.Error(), 400)
 	}
 
-	// Record the referral link if a code was used. If this fails, roll back the
-	// user so we don't end up with an orphan signup that bypassed the cap.
-	if referrerID != "" {
+	// Inserta user y (si aplica) la fila de referido en una sola transacción.
+	// Si el INSERT del referido falla, el INSERT del user hace rollback real,
+	// no soft-delete: el correo queda libre para un siguiente intento.
+	txErr := uc.txRunner.WithTransaction(ctx, func(txCtx context.Context) error {
+		if err := uc.userRepo.Create(txCtx, user); err != nil {
+			return err
+		}
+		if referralCode == "" {
+			return nil
+		}
+
+		// Lock del código para que dos registros simultáneos no rebasen el cupo.
+		codeEntry, err := uc.referralCodeRepo.GetByCodeForUpdate(txCtx, referralCode)
+		if err != nil {
+			return err
+		}
+		if codeEntry == nil {
+			return appErrors.NewAppError("VALIDATION_ERROR", "El código de referido no es válido", 400)
+		}
+		count, err := uc.userReferralRepo.CountByReferrer(txCtx, codeEntry.UserID)
+		if err != nil {
+			return err
+		}
+		if count >= codeEntry.MaxReferrals {
+			return appErrors.NewAppError("CONFLICT", "El código de referido ya alcanzó su límite", 409)
+		}
+
 		referral := &domain.UserReferral{
 			ID:             uuid.NewString(),
 			UserID:         user.ID,
-			ReferrerUserID: referrerID,
+			ReferrerUserID: codeEntry.UserID,
 			CodeUsed:       referralCode,
 			CreatedAt:      time.Now(),
 		}
-		if err := uc.userReferralRepo.Create(ctx, referral); err != nil {
-			uc.logger.WithError(err).Warn("Failed to create user referral")
-			_ = uc.userRepo.Delete(ctx, user.ID)
-			return nil, appErrors.NewAppErrorWithInternal("CREATE_ERROR", "Error creando referido", 500, err)
-		}
+		return uc.userReferralRepo.Create(txCtx, referral)
+	})
+	if txErr != nil {
+		uc.logger.WithError(txErr).Warn("Register transaction rolled back")
+		return nil, txErr
 	}
 
 	// Send verification code (mismo código a correo y teléfono si ambos existen).
@@ -171,7 +186,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 	}
 
 	if err := uc.verificationSvc.SendVerificationCodeToDestinations(user.ID, destinations); err != nil {
-		// Log error but don't fail registration - user can request new code later
+		// No falla el registro: el user puede pedir reenvío con resend-verification-code.
 		uc.logger.WithError(err).WithField("user_id", user.ID).Warn("Failed to send verification code during registration")
 	}
 

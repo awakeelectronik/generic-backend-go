@@ -16,8 +16,11 @@ type UserRepository interface {
 	GetByPhone(ctx context.Context, phone string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
 	UpdatePasswordAndBumpTokenVersion(ctx context.Context, userID, passwordHash string) error
+	// BumpTokenVersion incrementa token_version en 1, invalidando todos los
+	// access/refresh tokens previos del usuario. Lo usa /auth/refresh para
+	// rotar el refresh: el que acaba de presentarse queda revocado.
+	BumpTokenVersion(ctx context.Context, userID string) error
 	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, limit, offset int) ([]*domain.User, error)
 	// ListWithSummary devuelve la página filtrada por q (sobre name, email, phone) más
 	// totales agregados (totalUsers, activeUsers, inactiveUsers). q vacío = sin filtro.
 	ListWithSummary(ctx context.Context, limit, offset int, q string) (users []*domain.User, total int, active int, inactive int, err error)
@@ -25,6 +28,11 @@ type UserRepository interface {
 
 type ReferralCodeRepository interface {
 	GetByCode(ctx context.Context, code string) (*domain.ReferralCode, error)
+	// GetByCodeForUpdate is the same lookup with SELECT ... FOR UPDATE.
+	// Only meaningful inside a TransactionRunner.WithTransaction call:
+	// it locks the row so concurrent registers using the same code can't
+	// both pass the MaxReferrals check at the limit.
+	GetByCodeForUpdate(ctx context.Context, code string) (*domain.ReferralCode, error)
 	GetByUserID(ctx context.Context, userID string) (*domain.ReferralCode, error)
 	Create(ctx context.Context, code *domain.ReferralCode) error
 }
@@ -39,6 +47,7 @@ type DocumentRepository interface {
 	Create(ctx context.Context, doc *domain.Document) error
 	GetByID(ctx context.Context, id string) (*domain.Document, error)
 	GetByUserID(ctx context.Context, userID string, limit, offset int) ([]*domain.Document, error)
+	CountByUserID(ctx context.Context, userID string) (int, error)
 	Update(ctx context.Context, doc *domain.Document) error
 	Delete(ctx context.Context, id string) error
 }

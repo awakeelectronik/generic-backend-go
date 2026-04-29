@@ -12,6 +12,13 @@ type RefreshInput struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
+func (r RefreshInput) Validate() error {
+	if r.RefreshToken == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "refresh_token es obligatorio", 400)
+	}
+	return nil
+}
+
 type RefreshOutput struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
@@ -36,6 +43,10 @@ func NewRefreshUseCase(
 }
 
 func (uc *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*RefreshOutput, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
 	uc.logger.Info("Token refresh attempt")
 
 	userID, tokenVersion, err := uc.tokenProvider.ValidateRefreshToken(input.RefreshToken)
@@ -54,13 +65,22 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Ref
 		return nil, appErrors.ErrUnauthorized
 	}
 
-	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, user.TokenVersion)
+	// Rotación real: subir token_version invalida el refresh recién consumido
+	// (y cualquier access token aún vivo). Un replay del refresh anterior
+	// fallará en la comparación de version arriba.
+	if err := uc.userRepo.BumpTokenVersion(ctx, user.ID); err != nil {
+		uc.logger.WithError(err).Error("Failed to bump token version on refresh")
+		return nil, appErrors.ErrInternalServer
+	}
+	newTokenVersion := user.TokenVersion + 1
+
+	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, newTokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate new token")
 		return nil, appErrors.ErrInternalServer
 	}
 
-	newRefreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, user.TokenVersion)
+	newRefreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, newTokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate new refresh token")
 		return nil, appErrors.ErrInternalServer

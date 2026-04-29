@@ -13,6 +13,13 @@ type CheckReferralInput struct {
 	Code string `json:"code" binding:"required,len=6,alphanum"`
 }
 
+func (c CheckReferralInput) Validate() error {
+	if strings.TrimSpace(c.Code) == "" {
+		return appErrors.NewValidationError("code", "es obligatorio")
+	}
+	return nil
+}
+
 type CheckReferralOutput struct {
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"`
@@ -40,10 +47,10 @@ func NewCheckReferralUseCase(
 }
 
 func (uc *CheckReferralUseCase) Execute(ctx context.Context, input CheckReferralInput) (*CheckReferralOutput, error) {
-	code := strings.ToUpper(strings.TrimSpace(input.Code))
-	if code == "" {
-		return nil, appErrors.NewValidationError("code", "es obligatorio")
+	if err := input.Validate(); err != nil {
+		return nil, err
 	}
+	code := strings.ToUpper(strings.TrimSpace(input.Code))
 
 	codeEntry, err := uc.referralCodeRepo.GetByCode(ctx, code)
 	if err != nil {

@@ -130,6 +130,9 @@ func RunMigrations(db *sql.DB) error {
 	if err := ensureUsersTokenVersionColumn(db); err != nil {
 		return err
 	}
+	if err := ensureUsersPhoneUnique(db); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -145,4 +148,36 @@ func ensureUsersTokenVersionColumn(db *sql.DB) error {
 		return nil
 	}
 	return fmt.Errorf("ensure users.token_version: %w", err)
+}
+
+// ensureUsersPhoneUnique adds a UNIQUE index on users.phone. Idempotent.
+// If existing rows already contain duplicate phone values, the ALTER fails
+// (MySQL error 1062): we surface that as a clear error so the operator knows
+// to deduplicate before retrying. NULL phones are allowed and don't conflict.
+func ensureUsersPhoneUnique(db *sql.DB) error {
+	var existing string
+	err := db.QueryRow(`
+		SELECT INDEX_NAME
+		FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'users'
+		  AND COLUMN_NAME = 'phone'
+		  AND NON_UNIQUE = 0
+		LIMIT 1
+	`).Scan(&existing)
+	if err == nil {
+		return nil // ya existe una unique sobre phone
+	}
+	if err != sql.ErrNoRows {
+		return fmt.Errorf("check users.phone unique: %w", err)
+	}
+
+	if _, err := db.Exec(`ALTER TABLE users ADD UNIQUE INDEX uq_users_phone (phone)`); err != nil {
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "duplicate entry") || strings.Contains(msg, "1062") {
+			return fmt.Errorf("cannot add UNIQUE on users.phone: existing rows have duplicate phones; deduplicate first: %w", err)
+		}
+		return fmt.Errorf("ensure users.phone unique: %w", err)
+	}
+	return nil
 }

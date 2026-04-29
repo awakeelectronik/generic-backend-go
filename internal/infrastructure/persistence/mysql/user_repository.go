@@ -200,6 +200,32 @@ func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 	return nil
 }
 
+// BumpTokenVersion increments token_version by 1, revoking every JWT
+// (access and refresh) issued before this point. Used by /auth/refresh so
+// rotation is real: the refresh token just consumed cannot be replayed.
+func (r *UserRepository) BumpTokenVersion(ctx context.Context, userID string) error {
+	query := `
+		UPDATE users
+		SET token_version = token_version + 1, updated_at = ?
+		WHERE id = ? AND deleted_at IS NULL
+	`
+
+	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query, time.Now(), userID)
+	if err != nil {
+		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error rotando refresh token", 500, err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando rotación", 500, err)
+	}
+	if rows == 0 {
+		return appErrors.NewNotFoundError("Usuario")
+	}
+
+	return nil
+}
+
 // UpdatePasswordAndBumpTokenVersion swaps the password hash and increments
 // token_version atomically. The version bump revokes every JWT issued before
 // this point; combined with auth middleware, it forces re-login.
@@ -308,50 +334,3 @@ func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int,
 	return users, total, active, inactive, nil
 }
 
-func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*domain.User, error) {
-	query := `
-		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
-		FROM users 
-		WHERE deleted_at IS NULL
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
-
-	rows, err := dbFrom(ctx, r.db).QueryContext(ctx, query, limit, offset)
-	if err != nil {
-		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error listing users", 500, err)
-	}
-	defer rows.Close()
-
-	var users []*domain.User
-	for rows.Next() {
-		var user domain.User
-		var deletedAt sql.NullTime
-		var email sql.NullString
-		var phone sql.NullString
-
-		err := rows.Scan(
-			&user.ID, &email, &user.Password, &user.Name, &phone,
-			&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
-		)
-		if err != nil {
-			return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning user", 500, err)
-		}
-
-		if email.Valid {
-			user.Email = email.String
-		}
-
-		if phone.Valid {
-			user.Phone = phone.String
-		}
-
-		if deletedAt.Valid {
-			user.DeletedAt = &deletedAt.Time
-		}
-
-		users = append(users, &user)
-	}
-
-	return users, nil
-}

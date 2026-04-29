@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
@@ -29,6 +30,16 @@ func NewListDocumentsUseCase(
 }
 
 func (uc *ListDocumentsUseCase) Execute(ctx context.Context, userID string, limit, offset int) (*ListDocumentsOutput, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, appErrors.NewAppError("VALIDATION_ERROR", "userID es obligatorio", 400)
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	uc.logger.WithFields(logrus.Fields{
 		"user_id": userID,
 		"limit":   limit,
@@ -42,20 +53,26 @@ func (uc *ListDocumentsUseCase) Execute(ctx context.Context, userID string, limi
 		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching documents", 500, err)
 	}
 
-	documents := make([]GetDocumentOutput, 0)
+	total, err := uc.docRepo.CountByUserID(ctx, userID)
+	if err != nil {
+		uc.logger.WithError(err).Error("Failed to count documents")
+		return nil, err
+	}
+
+	documents := make([]GetDocumentOutput, 0, len(docs))
 	for _, doc := range docs {
 		documents = append(documents, GetDocumentOutput{
 			ID:        doc.ID,
 			FileName:  doc.FileName,
 			FileSize:  doc.FileSize,
 			Status:    string(doc.Status),
-			FileURL:   doc.FilePath,
+			FilePath:  doc.FilePath,
 			CreatedAt: doc.CreatedAt.String(),
 		})
 	}
 
 	return &ListDocumentsOutput{
 		Documents: documents,
-		Total:     len(documents),
+		Total:     total,
 	}, nil
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
@@ -15,9 +16,21 @@ type ForgotPasswordInput struct {
 	Phone string `json:"phone" binding:"omitempty,len=10,numeric"`
 }
 
+func (f ForgotPasswordInput) Validate() error {
+	if strings.TrimSpace(f.Email) == "" && strings.TrimSpace(f.Phone) == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
+	}
+	return nil
+}
+
 type ForgotPasswordOutput struct {
 	Message string `json:"message"`
 }
+
+// genericResponseMessage is returned regardless of whether the user exists, the
+// send succeeded, or the lookup errored. This avoids leaking which emails/phones
+// are registered (account enumeration). Real failures are logged server-side.
+const genericResponseMessage = "Si tu cuenta existe, recibirás un código de verificación"
 
 type ForgotPasswordUseCase struct {
 	userRepo        application.UserRepository
@@ -38,37 +51,48 @@ func NewForgotPasswordUseCase(
 }
 
 func (uc *ForgotPasswordUseCase) Execute(ctx context.Context, input ForgotPasswordInput) (*ForgotPasswordOutput, error) {
-	if strings.TrimSpace(input.Email) == "" && strings.TrimSpace(input.Phone) == "" {
-		return nil, appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
+	if err := input.Validate(); err != nil {
+		return nil, err
 	}
 
 	var (
-		user        *domain.User
-		err         error
-		destination string
+		user *domain.User
+		err  error
 	)
-
 	if strings.TrimSpace(input.Email) != "" {
 		user, err = uc.userRepo.GetByEmail(ctx, input.Email)
-		destination = input.Email
 	} else {
 		user, err = uc.userRepo.GetByPhone(ctx, input.Phone)
-		destination = input.Phone
 	}
 	if err != nil {
-		uc.logger.WithError(err).Error("Failed to fetch user for password reset")
-		return nil, err
+		uc.logger.WithError(err).Warn("forgot password: user lookup failed")
+		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 	}
 	if user == nil {
-		return nil, appErrors.NewNotFoundError("Usuario")
+		// No revelar inexistencia.
+		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 	}
 
-	if err := uc.verificationSvc.SendVerificationCode(user.ID, destination); err != nil {
-		uc.logger.WithError(err).Error("Failed to send verification code for password reset")
-		return nil, appErrors.ErrInternalServer
+	// Enviar a todos los contactos del usuario, igual que register/resend, para
+	// que el código llegue por cualquier canal disponible.
+	var destinations []string
+	if strings.TrimSpace(user.Email) != "" {
+		destinations = append(destinations, user.Email)
+	}
+	if strings.TrimSpace(user.Phone) != "" {
+		destinations = append(destinations, user.Phone)
+	}
+	if len(destinations) == 0 {
+		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 	}
 
-	return &ForgotPasswordOutput{
-		Message: "Código de verificación enviado",
-	}, nil
+	if err := uc.verificationSvc.SendVerificationCodeToDestinations(user.ID, destinations); err != nil {
+		// Rate-limit interno se silencia con el mismo mensaje genérico para
+		// preservar la no-enumeración. Cualquier otro fallo se loguea.
+		if !errors.Is(err, appErrors.ErrVerificationRateLimited) {
+			uc.logger.WithError(err).WithField("user_id", user.ID).Warn("forgot password: send failed")
+		}
+	}
+
+	return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 }

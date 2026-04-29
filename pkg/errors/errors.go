@@ -9,6 +9,15 @@ import (
 // ErrVerificationRateLimited indicates too many verification code sends for the user.
 var ErrVerificationRateLimited = stderrors.New("verification code rate limited")
 
+// Sentinel errors for verification code outcomes. Returned by VerificationService
+// so handlers can branch with errors.Is instead of comparing error strings.
+var (
+	ErrVerificationCodeNotFound = stderrors.New("verification code not found")
+	ErrVerificationCodeUsed     = stderrors.New("verification code already used")
+	ErrVerificationCodeExpired  = stderrors.New("verification code expired")
+	ErrVerificationCodeInvalid  = stderrors.New("invalid verification code")
+)
+
 type AppError struct {
 	Code       string      `json:"code"`
 	Message    string      `json:"message"`

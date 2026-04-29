@@ -15,6 +15,19 @@ type ChangePasswordInput struct {
 	NewPassword     string `json:"new_password" binding:"required,min=5,max=20"`
 }
 
+func (c ChangePasswordInput) Validate() error {
+	if strings.TrimSpace(c.UserID) == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "Usuario inválido", 400)
+	}
+	if len(c.CurrentPassword) < 5 || len(c.CurrentPassword) > 20 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña actual debe tener entre 5 y 20 caracteres", 400)
+	}
+	if len(c.NewPassword) < 5 || len(c.NewPassword) > 20 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La nueva contraseña debe tener entre 5 y 20 caracteres", 400)
+	}
+	return nil
+}
+
 type ChangePasswordOutput struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
@@ -44,8 +57,8 @@ func NewChangePasswordUseCase(
 }
 
 func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswordInput) (*ChangePasswordOutput, error) {
-	if strings.TrimSpace(input.UserID) == "" {
-		return nil, appErrors.NewAppError("VALIDATION_ERROR", "Usuario inválido", 400)
+	if err := input.Validate(); err != nil {
+		return nil, err
 	}
 
 	user, err := uc.userRepo.GetByID(ctx, input.UserID)

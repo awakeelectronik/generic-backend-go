@@ -2,14 +2,13 @@ package document
 
 import (
 	"context"
-	"fmt"
 	"io"
+	"strings"
 
 	apperrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	"github.com/awakeelectronik/generic-backend-go/internal/domain"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,19 +16,33 @@ type UploadDocumentUseCase struct {
 	documentRepo application.DocumentRepository
 	fileStorage  application.FileStorage
 	maxFileSize  int64
+	allowedMimes []string
 	logger       *logrus.Logger
 }
 
+// NewUploadDocumentUseCase wires the upload flow.
+//
+// allowedMimes restricts accepted MIME types. Empty/nil disables the check
+// (every type accepted). Matching is exact and case-insensitive.
 func NewUploadDocumentUseCase(
 	documentRepo application.DocumentRepository,
 	fileStorage application.FileStorage,
 	maxFileSize int64,
+	allowedMimes []string,
 	logger *logrus.Logger,
 ) *UploadDocumentUseCase {
+	normalized := make([]string, 0, len(allowedMimes))
+	for _, m := range allowedMimes {
+		m = strings.ToLower(strings.TrimSpace(m))
+		if m != "" {
+			normalized = append(normalized, m)
+		}
+	}
 	return &UploadDocumentUseCase{
 		documentRepo: documentRepo,
 		fileStorage:  fileStorage,
 		maxFileSize:  maxFileSize,
+		allowedMimes: normalized,
 		logger:       logger,
 	}
 }
@@ -42,47 +55,47 @@ func (u *UploadDocumentUseCase) Execute(
 	fileSize int64,
 	mimeType string,
 ) (*domain.Document, error) {
-	// Validaciones
+	if strings.TrimSpace(userID) == "" {
+		return nil, apperrors.NewAppError("VALIDATION_ERROR", "userID es obligatorio", 400)
+	}
+	if strings.TrimSpace(fileName) == "" {
+		return nil, apperrors.NewAppError("VALIDATION_ERROR", "fileName es obligatorio", 400)
+	}
+	if file == nil {
+		return nil, apperrors.NewAppError("VALIDATION_ERROR", "file es obligatorio", 400)
+	}
+	if fileSize <= 0 {
+		return nil, apperrors.NewAppError("VALIDATION_ERROR", "fileSize debe ser mayor a 0", 400)
+	}
 	if fileSize > u.maxFileSize {
-		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", fileSize, u.maxFileSize)
+		return nil, apperrors.NewAppError(
+			"FILE_TOO_LARGE",
+			"El archivo excede el tamaño máximo permitido",
+			413,
+		)
+	}
+	if !u.isMimeAllowed(mimeType) {
+		return nil, apperrors.NewAppError(
+			"UNSUPPORTED_MEDIA_TYPE",
+			"Tipo de archivo no permitido",
+			415,
+		)
 	}
 
-	// ✅ CAMBIO: Pasar userID al Save
-	storedPath, originalName, err := u.fileStorage.Save(
-		ctx,
-		userID, // ← Nueva carpeta por usuario
-		fileName,
-		file,
-		fileSize,
-	)
+	storedPath, originalName, err := u.fileStorage.Save(ctx, userID, fileName, file, fileSize)
 	if err != nil {
 		u.logger.WithError(err).Error("Failed to save file")
-		return nil, fmt.Errorf("failed to save file: %w", err)
+		return nil, apperrors.NewAppErrorWithInternal("STORAGE_ERROR", "Error guardando archivo", 500, err)
 	}
 
-	// Crear documento
-	doc := &domain.Document{
-		ID:       uuid.NewString(),
-		UserID:   userID,
-		FileName: originalName, // ← Nombre original para el usuario
-		FilePath: storedPath,   // ← Path único en disco
-		FileSize: fileSize,
-		MimeType: mimeType,
-		Status:   "pending",
+	doc, err := domain.NewDocument(userID, originalName, storedPath, mimeType, fileSize)
+	if err != nil {
+		return nil, apperrors.NewAppError("VALIDATION_ERROR", err.Error(), 400)
 	}
 
-	// Guardar en BD
 	if err := u.documentRepo.Create(ctx, doc); err != nil {
 		u.logger.WithError(err).Error("Failed to create document record")
-		// Limpiar archivo si falla el registro BD
-		// Si el error de la aplicación contiene un error interno (por ejemplo MySQL),
-		// envolver y devolver ese error interno para que la consola muestre el detalle.
-		if appErr, ok := err.(*apperrors.AppError); ok {
-			if appErr.Internal != nil {
-				return nil, fmt.Errorf("failed to create document: %w", appErr.Internal)
-			}
-		}
-		return nil, fmt.Errorf("failed to create document: %w", err)
+		return nil, err
 	}
 
 	u.logger.WithFields(logrus.Fields{
@@ -93,4 +106,24 @@ func (u *UploadDocumentUseCase) Execute(
 	}).Info("Document uploaded successfully")
 
 	return doc, nil
+}
+
+func (u *UploadDocumentUseCase) isMimeAllowed(mimeType string) bool {
+	if len(u.allowedMimes) == 0 {
+		return true
+	}
+	got := strings.ToLower(strings.TrimSpace(mimeType))
+	if got == "" {
+		return false
+	}
+	// El navegador puede mandar "image/jpeg; charset=binary" o similar; comparar por prefijo del tipo principal.
+	if i := strings.IndexByte(got, ';'); i >= 0 {
+		got = strings.TrimSpace(got[:i])
+	}
+	for _, allowed := range u.allowedMimes {
+		if got == allowed {
+			return true
+		}
+	}
+	return false
 }

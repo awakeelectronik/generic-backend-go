@@ -9,12 +9,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+
 type LoginInput struct {
 	Email    string `json:"email" binding:"omitempty,email"`
 	Phone    string `json:"phone" binding:"omitempty,len=10,numeric"`
 	Password string `json:"password" binding:"required"`
 }
 
+// Validate only checks inter-field rules (at least one of email/phone).
+// Field shape (password required, email format, phone shape) lives in the
+// binding tags above so there's a single source of truth.
 func (li LoginInput) Validate() error {
 	if li.Email == "" && li.Phone == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
@@ -51,6 +55,10 @@ func NewLoginUseCase(
 }
 
 func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOutput, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
 	uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Info("Login attempt")
 
 	// Find user by email or phone

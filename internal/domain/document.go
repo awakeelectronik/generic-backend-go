@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +14,13 @@ const (
 	StatusPending  DocumentStatus = "pending"
 	StatusVerified DocumentStatus = "verified"
 	StatusRejected DocumentStatus = "rejected"
+)
+
+var (
+	ErrDocumentEmptyUserID   = errors.New("document userID is required")
+	ErrDocumentEmptyFileName = errors.New("document fileName is required")
+	ErrDocumentEmptyFilePath = errors.New("document filePath is required")
+	ErrDocumentInvalidSize   = errors.New("document fileSize must be greater than 0")
 )
 
 type Document struct {
@@ -27,7 +36,25 @@ type Document struct {
 	UpdatedAt time.Time
 }
 
-func NewDocument(userID, fileName, filePath, mimeType string, fileSize int64) *Document {
+func NewDocument(userID, fileName, filePath, mimeType string, fileSize int64) (*Document, error) {
+	userID = strings.TrimSpace(userID)
+	fileName = strings.TrimSpace(fileName)
+	filePath = strings.TrimSpace(filePath)
+
+	if userID == "" {
+		return nil, ErrDocumentEmptyUserID
+	}
+	if fileName == "" {
+		return nil, ErrDocumentEmptyFileName
+	}
+	if filePath == "" {
+		return nil, ErrDocumentEmptyFilePath
+	}
+	if fileSize <= 0 {
+		return nil, ErrDocumentInvalidSize
+	}
+
+	now := time.Now()
 	return &Document{
 		ID:        uuid.New().String(),
 		UserID:    userID,
@@ -37,9 +64,9 @@ func NewDocument(userID, fileName, filePath, mimeType string, fileSize int64) *D
 		FileSize:  fileSize,
 		Status:    StatusPending,
 		Metadata:  make(map[string]interface{}),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
 }
 
 func (d *Document) Verify() {

@@ -117,7 +117,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	adminChecker := security.NewAdminChecker(cfg.Admin.Email, cfg.Admin.Phone)
 
 	// ========== USE CASES ==========
-	registerUC := authUC.NewRegisterUseCase(userRepo, referralCodeRepo, userReferralRepo, passwordHasher, verificationService, cfg.Auth.RequireReferral, logger)
+	registerUC := authUC.NewRegisterUseCase(userRepo, referralCodeRepo, userReferralRepo, txRunner, passwordHasher, verificationService, cfg.Auth.RequireReferral, logger)
 	checkReferralUC := authUC.NewCheckReferralUseCase(userRepo, referralCodeRepo, userReferralRepo, logger)
 	loginUC := authUC.NewLoginUseCase(userRepo, passwordHasher, tokenProvider, logger)
 	refreshUC := authUC.NewRefreshUseCase(userRepo, tokenProvider, logger)
@@ -128,10 +128,14 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	resetPasswordUC := authUC.NewResetPasswordUseCase(userRepo, passwordHasher, verificationService, tokenProvider, logger)
 	changePasswordUC := authUC.NewChangePasswordUseCase(userRepo, passwordHasher, tokenProvider, logger)
 
-	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, logger)
+	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, cfg.Storage.AllowedMimes, logger)
 	listDocUC := docUC.NewListDocumentsUseCase(documentRepo, logger)
+	downloadDocUC := docUC.NewDownloadDocumentUseCase(documentRepo, fileStorage, logger)
 
 	listUsersUC := userUC.NewListUsersUseCase(userRepo, logger)
+	getUserUC := userUC.NewGetUserUseCase(userRepo, logger)
+	updateUserUC := userUC.NewUpdateUserUseCase(userRepo, logger)
+	deleteUserUC := userUC.NewDeleteUserUseCase(userRepo, logger)
 
 	// ========== HANDLERS ==========
 	authHandler := handlers.NewAuthHandler(
@@ -147,8 +151,8 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		changePasswordUC,
 		logger,
 	)
-	userHandler := handlers.NewUserHandler(userRepo, listUsersUC, logger)
-	documentHandler := handlers.NewDocumentHandlerWithList(uploadDocUC, listDocUC, logger)
+	userHandler := handlers.NewUserHandler(listUsersUC, getUserUC, updateUserUC, deleteUserUC, logger)
+	documentHandler := handlers.NewDocumentHandler(uploadDocUC, listDocUC, downloadDocUC, logger)
 
 	// ========== RETURN DEPENDENCIES ==========
 	return &Dependencies{

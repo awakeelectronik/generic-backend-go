@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
@@ -13,7 +14,9 @@ type GetDocumentOutput struct {
 	FileName  string `json:"file_name"`
 	FileSize  int64  `json:"file_size"`
 	Status    string `json:"status"`
-	FileURL   string `json:"file_url"`
+	// FilePath is the server-side relative path. To download, hit
+	// GET /api/v1/documents/:id/download (which streams the file behind auth).
+	FilePath  string `json:"file_path"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -33,6 +36,13 @@ func NewGetDocumentUseCase(
 }
 
 func (uc *GetDocumentUseCase) Execute(ctx context.Context, documentID, userID string) (*GetDocumentOutput, error) {
+	if strings.TrimSpace(documentID) == "" {
+		return nil, appErrors.NewAppError("VALIDATION_ERROR", "documentID es obligatorio", 400)
+	}
+	if strings.TrimSpace(userID) == "" {
+		return nil, appErrors.NewAppError("VALIDATION_ERROR", "userID es obligatorio", 400)
+	}
+
 	uc.logger.WithFields(logrus.Fields{
 		"document_id": documentID,
 		"user_id":     userID,
@@ -58,7 +68,7 @@ func (uc *GetDocumentUseCase) Execute(ctx context.Context, documentID, userID st
 		FileName:  doc.FileName,
 		FileSize:  doc.FileSize,
 		Status:    string(doc.Status),
-		FileURL:   doc.FilePath,
+		FilePath:  doc.FilePath,
 		CreatedAt: doc.CreatedAt.String(),
 	}, nil
 }

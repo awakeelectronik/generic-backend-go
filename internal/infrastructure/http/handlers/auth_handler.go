@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application/auth"
@@ -8,6 +9,25 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
+
+// verificationErrorResponse maps the typed sentinel errors from
+// VerificationService to a stable, user-facing message. Returns true if the
+// error matched a known sentinel.
+func verificationErrorResponse(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, appErrors.ErrVerificationCodeNotFound):
+		ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación no encontrado")
+	case errors.Is(err, appErrors.ErrVerificationCodeUsed):
+		ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación ya utilizado")
+	case errors.Is(err, appErrors.ErrVerificationCodeExpired):
+		ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación expirado")
+	case errors.Is(err, appErrors.ErrVerificationCodeInvalid):
+		ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación inválido")
+	default:
+		return false
+	}
+	return true
+}
 
 type AuthHandler struct {
 	registerUC           *auth.RegisterUseCase
@@ -80,11 +100,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	// Validate that at least email or phone is provided
 	if err := req.Validate(); err != nil {
-		if appErr, ok := err.(*appErrors.AppError); ok {
-			ErrorResponse(c, appErr.StatusCode, appErr.Code, appErr.Message)
-		} else {
-			ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", "Datos inválidos")
-		}
+		HandleError(c, err)
 		return
 	}
 
@@ -107,11 +123,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if err := req.Validate(); err != nil {
-		if appErr, ok := err.(*appErrors.AppError); ok {
-			ErrorResponse(c, appErr.StatusCode, appErr.Code, appErr.Message)
-		} else {
-			ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", "Datos inválidos")
-		}
+		HandleError(c, err)
 		return
 	}
 
@@ -153,11 +165,7 @@ func (h *AuthHandler) CheckAvailability(c *gin.Context) {
 
 	// Validate that at least email or phone is provided
 	if err := req.Validate(); err != nil {
-		if appErr, ok := err.(*appErrors.AppError); ok {
-			ErrorResponse(c, appErr.StatusCode, appErr.Code, appErr.Message)
-		} else {
-			ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", "Datos inválidos")
-		}
+		HandleError(c, err)
 		return
 	}
 
@@ -182,20 +190,10 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	output, err := h.verifyCodeUC.Execute(c.Request.Context(), req)
 	if err != nil {
 		h.logger.WithError(err).Warn("Code verification failed")
-
-		// Provide specific error messages in Spanish
-		switch err.Error() {
-		case "no verification code found for user":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación no encontrado")
-		case "verification code already used":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación ya utilizado")
-		case "verification code expired":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación expirado")
-		case "invalid verification code":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación inválido")
-		default:
-			ErrorResponse(c, http.StatusInternalServerError, "VERIFICATION_ERROR", "Error al verificar código")
+		if verificationErrorResponse(c, err) {
+			return
 		}
+		HandleError(c, err)
 		return
 	}
 
@@ -250,18 +248,10 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	output, err := h.resetPasswordUC.Execute(c.Request.Context(), req)
 	if err != nil {
 		h.logger.WithError(err).Warn("Reset password failed")
-		switch err.Error() {
-		case "no verification code found for user":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación no encontrado")
-		case "verification code already used":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación ya utilizado")
-		case "verification code expired":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación expirado")
-		case "invalid verification code":
-			ErrorResponse(c, http.StatusBadRequest, "VERIFICATION_ERROR", "Código de verificación inválido")
-		default:
-			HandleError(c, err)
+		if verificationErrorResponse(c, err) {
+			return
 		}
+		HandleError(c, err)
 		return
 	}
 

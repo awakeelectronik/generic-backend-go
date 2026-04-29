@@ -189,16 +189,16 @@ func (vs *VerificationService) VerifyCode(userID, code string) error {
 
 	stored, exists := vs.codes[userID]
 	if !exists {
-		return fmt.Errorf("no verification code found for user")
+		return appErrors.ErrVerificationCodeNotFound
 	}
 	if stored.Used {
-		return fmt.Errorf("verification code already used")
+		return appErrors.ErrVerificationCodeUsed
 	}
 	if time.Now().After(stored.ExpiresAt) {
-		return fmt.Errorf("verification code expired")
+		return appErrors.ErrVerificationCodeExpired
 	}
 	if stored.Code != code {
-		return fmt.Errorf("invalid verification code")
+		return appErrors.ErrVerificationCodeInvalid
 	}
 
 	stored.Used = true

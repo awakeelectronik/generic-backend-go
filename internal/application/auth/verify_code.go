@@ -2,14 +2,26 @@ package auth
 
 import (
 	"context"
+	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 type VerifyCodeInput struct {
 	UserID string `json:"user_id" binding:"required"`
 	Code   string `json:"code" binding:"required,len=4"`
+}
+
+func (v VerifyCodeInput) Validate() error {
+	if strings.TrimSpace(v.UserID) == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "user_id es obligatorio", 400)
+	}
+	if len(v.Code) != 4 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 4 caracteres", 400)
+	}
+	return nil
 }
 
 type VerifyCodeOutput struct {
@@ -41,6 +53,10 @@ func NewVerifyCodeUseCase(
 }
 
 func (uc *VerifyCodeUseCase) Execute(ctx context.Context, input VerifyCodeInput) (*VerifyCodeOutput, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
 	uc.logger.WithField("user_id", input.UserID).Info("Verifying code")
 
 	// Verify the code

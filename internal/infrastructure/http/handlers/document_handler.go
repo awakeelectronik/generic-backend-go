@@ -1,7 +1,13 @@
 package handlers
 
 import (
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application/document"
 	"github.com/gin-gonic/gin"
@@ -9,106 +15,133 @@ import (
 )
 
 type DocumentHandler struct {
-	uploadUC *document.UploadDocumentUseCase
-	listUC   *document.ListDocumentsUseCase
-	logger   *logrus.Logger
+	uploadUC   *document.UploadDocumentUseCase
+	listUC     *document.ListDocumentsUseCase
+	downloadUC *document.DownloadDocumentUseCase
+	logger     *logrus.Logger
 }
 
 func NewDocumentHandler(
 	uploadUC *document.UploadDocumentUseCase,
-	logger *logrus.Logger,
-) *DocumentHandler {
-	return &DocumentHandler{
-		uploadUC: uploadUC,
-		logger:   logger,
-	}
-}
-
-func NewDocumentHandlerWithList(
-	uploadUC *document.UploadDocumentUseCase,
 	listUC *document.ListDocumentsUseCase,
+	downloadUC *document.DownloadDocumentUseCase,
 	logger *logrus.Logger,
 ) *DocumentHandler {
 	return &DocumentHandler{
-		uploadUC: uploadUC,
-		listUC:   listUC,
-		logger:   logger,
+		uploadUC:   uploadUC,
+		listUC:     listUC,
+		downloadUC: downloadUC,
+		logger:     logger,
 	}
 }
 
-// Upload maneja la subida de documentos
+// Upload accepts a multipart "document" field and persists the file.
 func (h *DocumentHandler) Upload(c *gin.Context) {
-	// Obtener userID del middleware
-	userIDInterface, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	userID := c.GetString("user_id")
+	if userID == "" {
+		ErrorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", "No autorizado")
 		return
 	}
-	userID := userIDInterface.(string)
 
-	// Obtener archivo del form
 	file, err := c.FormFile("document")
 	if err != nil {
 		h.logger.WithError(err).Warn("Missing file in request")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing file"})
+		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", "Archivo 'document' es obligatorio")
 		return
 	}
 
-	// Abrir archivo
 	src, err := file.Open()
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to open uploaded file")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read file"})
+		ErrorResponse(c, http.StatusInternalServerError, "STORAGE_ERROR", "No se pudo leer el archivo")
 		return
 	}
 	defer src.Close()
 
-	// ✅ Ejecutar use case (ahora con userID)
+	// El cliente puede no enviar Content-Type por parte (e.g. multipart simple).
+	// Inferimos desde la extensión para que la validación de MIME en el use
+	// case tenga algo concreto contra qué chequear.
+	mimeType := strings.TrimSpace(file.Header.Get("Content-Type"))
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		if guessed := mime.TypeByExtension(strings.ToLower(filepath.Ext(file.Filename))); guessed != "" {
+			mimeType = guessed
+		}
+	}
+
 	doc, err := h.uploadUC.Execute(
 		c.Request.Context(),
-		userID, // ← Pasar userID para carpeta única
+		userID,
 		file.Filename,
 		src,
 		file.Size,
-		file.Header.Get("Content-Type"),
+		mimeType,
 	)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to upload document")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload document"})
+		HandleError(c, err)
 		return
 	}
 
-	// Respuesta exitosa
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"document_id": doc.ID,
-			"file_name":   doc.FileName, // ← Nombre original
-			"file_path":   doc.FilePath, // ← Path único
-			"status":      doc.Status,
-		},
+	SuccessResponse(c, http.StatusOK, gin.H{
+		"document_id": doc.ID,
+		"file_name":   doc.FileName,
+		"file_path":   doc.FilePath,
+		"status":      doc.Status,
 	})
 }
 
-// List devuelve los documentos del usuario autenticado
+// List returns the authenticated user's documents, paginated via ?page=&page_size=.
 func (h *DocumentHandler) List(c *gin.Context) {
-	userIDInterface, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	userID := c.GetString("user_id")
+	if userID == "" {
+		ErrorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", "No autorizado")
 		return
 	}
-	userID := userIDInterface.(string)
 
-	// Defaults
-	limit := 10
-	offset := 0
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	offset := (page - 1) * pageSize
 
-	out, err := h.listUC.Execute(c.Request.Context(), userID, limit, offset)
+	out, err := h.listUC.Execute(c.Request.Context(), userID, pageSize, offset)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to list documents")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list documents"})
+		HandleError(c, err)
+		return
+	}
+	SuccessResponse(c, http.StatusOK, out)
+}
+
+// Download streams a document's bytes back to the client. Ownership is
+// enforced inside the use case; non-owners get 403 even if they guess the id.
+func (h *DocumentHandler) Download(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		ErrorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", "No autorizado")
 		return
 	}
 
-	SuccessResponse(c, http.StatusOK, out)
+	doc, reader, err := h.downloadUC.Execute(c.Request.Context(), c.Param("id"), userID)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+	defer reader.Close()
+
+	contentType := strings.TrimSpace(doc.MimeType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, doc.FileName))
+	c.Header("Content-Length", strconv.FormatInt(doc.FileSize, 10))
+	c.Status(http.StatusOK)
+
+	if _, err := io.Copy(c.Writer, reader); err != nil {
+		// Headers ya salieron; no podemos cambiar el status. Solo dejamos rastro.
+		h.logger.WithError(err).WithField("document_id", doc.ID).Warn("Document stream interrupted")
+	}
 }

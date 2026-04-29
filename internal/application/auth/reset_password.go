@@ -17,6 +17,19 @@ type ResetPasswordInput struct {
 	NewPassword string `json:"new_password" binding:"required,min=5,max=20"`
 }
 
+func (r ResetPasswordInput) Validate() error {
+	if strings.TrimSpace(r.Email) == "" && strings.TrimSpace(r.Phone) == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
+	}
+	if len(r.Code) != 4 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 4 caracteres", 400)
+	}
+	if len(r.NewPassword) < 5 || len(r.NewPassword) > 20 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña debe tener entre 5 y 20 caracteres", 400)
+	}
+	return nil
+}
+
 type ResetPasswordOutput struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
@@ -49,8 +62,8 @@ func NewResetPasswordUseCase(
 }
 
 func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPasswordInput) (*ResetPasswordOutput, error) {
-	if strings.TrimSpace(input.Email) == "" && strings.TrimSpace(input.Phone) == "" {
-		return nil, appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
+	if err := input.Validate(); err != nil {
+		return nil, err
 	}
 
 	var (

@@ -74,11 +74,12 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 		{
 			documents.POST("/upload", deps.DocumentHandler.Upload)
 			documents.GET("", deps.DocumentHandler.List)
+			documents.GET("/:id/download", deps.DocumentHandler.Download)
 		}
 
 		// Admin routes — gated by AdminChecker (single admin by email+phone).
 		admin := protected.Group("/admin")
-		admin.Use(middleware.AdminMiddleware(deps.AdminChecker, deps.UserRepo))
+		admin.Use(middleware.AdminMiddleware(deps.AdminChecker))
 		{
 			admin.GET("/users", deps.UserHandler.List)
 		}

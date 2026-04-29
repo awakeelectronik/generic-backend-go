@@ -88,7 +88,7 @@ func (r *DocumentRepository) GetByUserID(ctx context.Context, userID string, lim
 			&doc.MimeType, &doc.Status, &metadataJSON, &doc.CreatedAt, &doc.UpdatedAt,
 		)
 		if err != nil {
-			continue
+			return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning document", 500, err)
 		}
 
 		json.Unmarshal(metadataJSON, &doc.Metadata)
@@ -96,6 +96,18 @@ func (r *DocumentRepository) GetByUserID(ctx context.Context, userID string, lim
 	}
 
 	return documents, nil
+}
+
+// CountByUserID returns the total document count for a user (for pagination metadata).
+func (r *DocumentRepository) CountByUserID(ctx context.Context, userID string) (int, error) {
+	var count int
+	err := dbFrom(ctx, r.db).QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM documents WHERE user_id = ?`, userID,
+	).Scan(&count)
+	if err != nil {
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error counting documents", 500, err)
+	}
+	return count, nil
 }
 
 func (r *DocumentRepository) Update(ctx context.Context, doc *domain.Document) error {

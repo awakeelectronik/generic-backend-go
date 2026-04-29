@@ -16,6 +16,16 @@ type ResendVerificationInput struct {
 	Password string `json:"password" binding:"required"`
 }
 
+func (r ResendVerificationInput) Validate() error {
+	if strings.TrimSpace(r.UserID) == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "user_id es obligatorio", 400)
+	}
+	if r.Password == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña es obligatoria", 400)
+	}
+	return nil
+}
+
 type ResendVerificationOutput struct {
 	Message string `json:"message"`
 }
@@ -42,6 +52,10 @@ func NewResendVerificationUseCase(
 }
 
 func (uc *ResendVerificationUseCase) Execute(ctx context.Context, input ResendVerificationInput) (*ResendVerificationOutput, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
 	user, err := uc.userRepo.GetByID(ctx, strings.TrimSpace(input.UserID))
 	if err != nil || user == nil {
 		uc.logger.WithField("user_id", input.UserID).Warn("Resend verification: user not found")

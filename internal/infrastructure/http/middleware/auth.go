@@ -77,6 +77,9 @@ func AuthMiddleware(tokenProvider application.TokenProvider, userRepo applicatio
 
 		c.Set("user_id", userID)
 		c.Set("email", email)
+		// El user ya cargado se reutiliza en middlewares posteriores (p. ej.
+		// AdminMiddleware) y handlers, evitando un segundo round-trip a BD.
+		c.Set("user", user)
 		c.Next()
 	}
 }

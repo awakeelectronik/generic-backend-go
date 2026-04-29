@@ -37,6 +37,31 @@ func (r *ReferralCodeRepository) GetByCode(ctx context.Context, code string) (*d
 	return &referral, nil
 }
 
+// GetByCodeForUpdate locks the referral row inside the active transaction
+// (no-op outside a tx, since dbFrom returns the plain *sql.DB and MySQL only
+// honors FOR UPDATE within an explicit transaction).
+func (r *ReferralCodeRepository) GetByCodeForUpdate(ctx context.Context, code string) (*domain.ReferralCode, error) {
+	query := `
+		SELECT user_id, code, max_referrals, created_at
+		FROM user_referral_codes
+		WHERE code = ?
+		FOR UPDATE
+	`
+
+	var referral domain.ReferralCode
+	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, code).Scan(
+		&referral.UserID, &referral.Code, &referral.MaxReferrals, &referral.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error fetching referral code", 500, err)
+	}
+
+	return &referral, nil
+}
+
 func (r *ReferralCodeRepository) GetByUserID(ctx context.Context, userID string) (*domain.ReferralCode, error) {
 	query := `
 		SELECT user_id, code, max_referrals, created_at
