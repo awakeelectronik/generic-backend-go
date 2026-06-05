@@ -12,10 +12,11 @@ var ErrVerificationRateLimited = stderrors.New("verification code rate limited")
 // Sentinel errors for verification code outcomes. Returned by VerificationService
 // so handlers can branch with errors.Is instead of comparing error strings.
 var (
-	ErrVerificationCodeNotFound = stderrors.New("verification code not found")
-	ErrVerificationCodeUsed     = stderrors.New("verification code already used")
-	ErrVerificationCodeExpired  = stderrors.New("verification code expired")
-	ErrVerificationCodeInvalid  = stderrors.New("invalid verification code")
+	ErrVerificationCodeNotFound          = stderrors.New("verification code not found")
+	ErrVerificationCodeUsed              = stderrors.New("verification code already used")
+	ErrVerificationCodeExpired           = stderrors.New("verification code expired")
+	ErrVerificationCodeInvalid           = stderrors.New("invalid verification code")
+	ErrVerificationCodeAttemptsExceeded  = stderrors.New("verification code attempt limit exceeded")
 )
 
 type AppError struct {
