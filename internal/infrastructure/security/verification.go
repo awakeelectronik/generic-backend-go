@@ -20,6 +20,7 @@ type VerificationCode struct {
 	Code      string
 	ExpiresAt time.Time
 	Used      bool
+	Attempts  int
 }
 
 // VerificationService implements application.VerificationService.
@@ -54,10 +55,11 @@ func NewVerificationService(
 }
 
 const (
-	verificationCodeTTL    = 1 * time.Hour
-	minResendInterval      = 8 * time.Second
-	maxSendsPerHourPerUser = 5
-	sendHistoryWindow      = 1 * time.Hour
+	verificationCodeTTL     = 1 * time.Hour
+	minResendInterval       = 8 * time.Second
+	maxSendsPerHourPerUser  = 5
+	maxVerificationAttempts = 5
+	sendHistoryWindow       = 1 * time.Hour
 )
 
 // SendVerificationCode generates a 4-digit code and delivers it to the
@@ -197,7 +199,18 @@ func (vs *VerificationService) VerifyCode(userID, code string) error {
 	if time.Now().After(stored.ExpiresAt) {
 		return appErrors.ErrVerificationCodeExpired
 	}
+	if stored.Attempts >= maxVerificationAttempts {
+		// Cierre defensivo: una vez agotados los intentos, el código queda
+		// inutilizable aun si el siguiente envío llega correcto. Forzar
+		// reenvío evita brute-force con el código vigente.
+		stored.Used = true
+		return appErrors.ErrVerificationCodeAttemptsExceeded
+	}
 	if stored.Code != code {
+		stored.Attempts++
+		if stored.Attempts >= maxVerificationAttempts {
+			stored.Used = true
+		}
 		return appErrors.ErrVerificationCodeInvalid
 	}
 

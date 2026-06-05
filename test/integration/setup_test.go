@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
@@ -13,6 +15,35 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
+
+var (
+	testMigrationsOnce sync.Once
+	testMigrationsErr  error
+)
+
+// testDatabaseIdentifier valida el nombre de la BD de prueba antes de usarlo
+// en sentencias DDL. Defensa en profundidad para que TEST_DB_NAME mal puesto
+// (vacío, con caracteres SQL, o apuntando a una BD real) no destruya nada.
+// Acepta solo [A-Za-z0-9_], <= 64 chars, y exige que contenga "test" (case
+// insensitive). Devuelve el identificador entre backticks listo para SQL.
+func testDatabaseIdentifier(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("database name is empty")
+	}
+	if len(name) > 64 {
+		return "", fmt.Errorf("database name %q is too long", name)
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return "", fmt.Errorf("database name %q contains unsupported characters", name)
+	}
+	if !strings.Contains(strings.ToLower(name), "test") {
+		return "", fmt.Errorf("database name %q must contain \"test\" before integration tests may drop it", name)
+	}
+	return "`" + name + "`", nil
+}
 
 // TestDB maneja la BD de prueba
 type TestDB struct {
@@ -45,20 +76,39 @@ func SetupTestDB(t *testing.T) *TestDB {
 	pass := getenvDefault("TEST_DB_PASS", "password")
 	host := getenvDefault("TEST_DB_HOST", "127.0.0.1")
 	port := getenvDefault("TEST_DB_PORT", "3306")
-	name := getenvDefault("TEST_DB_NAME", "sumabitcointest")
+	name := getenvDefault("TEST_DB_NAME", "genericbackendtest")
 
 	t.Logf("Using test DB: user=%s host=%s port=%s name=%s", user, host, port, name)
 
-	// Conexión sin BD para crearla si no existe
-	rootDSN := fmt.Sprintf("%s:%s@tcp(%s:%s)/", user, pass, host, port)
+	dbIdentifier, err := testDatabaseIdentifier(name)
+	if err != nil {
+		t.Fatalf("Unsafe TEST_DB_NAME: %v", err)
+	}
+
+	// Conexión sin BD para recrearla. Timeouts evitan que un MySQL caído
+	// cuelgue el suite entero.
+	rootDSN := fmt.Sprintf("%s:%s@tcp(%s:%s)/?timeout=15s&readTimeout=15s&writeTimeout=15s", user, pass, host, port)
 	rootDB, err := sql.Open("mysql", rootDSN)
 	if err != nil {
 		t.Fatalf("Failed to connect to MySQL (root DSN): %v", err)
 	}
 	defer rootDB.Close()
 
-	if _, err := rootDB.Exec("CREATE DATABASE IF NOT EXISTS " + name); err != nil {
-		t.Fatalf("Failed to create test database %s: %v", name, err)
+	// DROP + CREATE una sola vez por proceso. CREATE TABLE IF NOT EXISTS no
+	// agrega columnas nuevas a tablas existentes, así que recrear la BD
+	// garantiza esquema fresco cuando evolucionan las migraciones.
+	testMigrationsOnce.Do(func() {
+		if _, err := rootDB.Exec("DROP DATABASE IF EXISTS " + dbIdentifier); err != nil {
+			testMigrationsErr = fmt.Errorf("drop test database: %w", err)
+			return
+		}
+		if _, err := rootDB.Exec("CREATE DATABASE " + dbIdentifier); err != nil {
+			testMigrationsErr = fmt.Errorf("create test database: %w", err)
+			return
+		}
+	})
+	if testMigrationsErr != nil {
+		t.Fatalf("test database setup: %v", testMigrationsErr)
 	}
 
 	// Conectar a la BD de prueba
