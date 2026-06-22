@@ -71,6 +71,23 @@ func (f *fakeUserRepo) ListWithSummary(context.Context, int, int, string) ([]*do
 	return nil, 0, 0, 0, nil
 }
 
+// --- userDestinations ---
+
+func TestUserDestinations(t *testing.T) {
+	if got := userDestinations(&domain.User{Email: "a@b.com", Phone: "3001234567"}); len(got) != 2 || got[0] != "a@b.com" || got[1] != "3001234567" {
+		t.Fatalf("both channels, email first: %v", got)
+	}
+	if got := userDestinations(&domain.User{Email: "a@b.com"}); len(got) != 1 || got[0] != "a@b.com" {
+		t.Fatalf("email only: %v", got)
+	}
+	if got := userDestinations(&domain.User{Phone: "3001234567"}); len(got) != 1 || got[0] != "3001234567" {
+		t.Fatalf("phone only: %v", got)
+	}
+	if got := userDestinations(&domain.User{}); len(got) != 0 {
+		t.Fatalf("no channels should yield empty, got %v", got)
+	}
+}
+
 // --- issueTokenPair ---
 
 func TestIssueTokenPair_success(t *testing.T) {

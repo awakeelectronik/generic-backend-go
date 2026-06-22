@@ -38,6 +38,21 @@ func findUserByEmailOrPhone(ctx context.Context, repo application.UserRepository
 	return nil, nil
 }
 
+// userDestinations returns the user's non-empty contact channels (email first,
+// then phone) — the targets a verification/reset code is delivered to. Shared by
+// register, resend-verification and forgot-password, which all fan a single code
+// out to whatever channels the user has.
+func userDestinations(u *domain.User) []string {
+	var dests []string
+	if strings.TrimSpace(u.Email) != "" {
+		dests = append(dests, u.Email)
+	}
+	if strings.TrimSpace(u.Phone) != "" {
+		dests = append(dests, u.Phone)
+	}
+	return dests
+}
+
 // SessionOutput is the authenticated-session payload returned by every flow that
 // logs a user in: login, verify-code, and password change/reset. They all return
 // the same shape, so they share one type instead of four identical structs.

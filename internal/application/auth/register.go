@@ -177,13 +177,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 	}
 
 	// Send verification code (mismo código a correo y teléfono si ambos existen).
-	var destinations []string
-	if strings.TrimSpace(user.Email) != "" {
-		destinations = append(destinations, user.Email)
-	}
-	if strings.TrimSpace(user.Phone) != "" {
-		destinations = append(destinations, user.Phone)
-	}
+	destinations := userDestinations(user)
 
 	if err := uc.verificationSvc.SendVerificationCodeToDestinations(user.ID, destinations); err != nil {
 		// No falla el registro: el user puede pedir reenvío con resend-verification-code.

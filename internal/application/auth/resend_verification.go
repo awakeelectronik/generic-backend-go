@@ -71,13 +71,7 @@ func (uc *ResendVerificationUseCase) Execute(ctx context.Context, input ResendVe
 		return nil, appErrors.NewAppError("ALREADY_VERIFIED", "Tu contacto ya está verificado. Inicia sesión.", 400)
 	}
 
-	var destinations []string
-	if strings.TrimSpace(user.Email) != "" {
-		destinations = append(destinations, user.Email)
-	}
-	if strings.TrimSpace(user.Phone) != "" {
-		destinations = append(destinations, user.Phone)
-	}
+	destinations := userDestinations(user)
 	if len(destinations) == 0 {
 		return nil, appErrors.NewAppError("VALIDATION_ERROR", "No hay correo ni teléfono para enviar el código", 400)
 	}

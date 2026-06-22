@@ -66,13 +66,7 @@ func (uc *ForgotPasswordUseCase) Execute(ctx context.Context, input ForgotPasswo
 
 	// Enviar a todos los contactos del usuario, igual que register/resend, para
 	// que el código llegue por cualquier canal disponible.
-	var destinations []string
-	if strings.TrimSpace(user.Email) != "" {
-		destinations = append(destinations, user.Email)
-	}
-	if strings.TrimSpace(user.Phone) != "" {
-		destinations = append(destinations, user.Phone)
-	}
+	destinations := userDestinations(user)
 	if len(destinations) == 0 {
 		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 	}
