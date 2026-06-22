@@ -74,16 +74,10 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Ref
 		return nil, appErrors.ErrInternalServer
 	}
 
-	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, newTokenVersion)
+	token, newRefreshToken, err := issueTokenPair(uc.tokenProvider, user.ID, user.Email, newTokenVersion)
 	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate new token")
-		return nil, appErrors.ErrInternalServer
-	}
-
-	newRefreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, newTokenVersion)
-	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate new refresh token")
-		return nil, appErrors.ErrInternalServer
+		uc.logger.WithError(err).Error("Failed to issue tokens on refresh")
+		return nil, err
 	}
 
 	uc.logger.WithField("user_id", userID).Info("Token refreshed successfully")

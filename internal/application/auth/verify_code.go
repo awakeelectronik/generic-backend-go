@@ -83,15 +83,9 @@ func (uc *VerifyCodeUseCase) Execute(ctx context.Context, input VerifyCodeInput)
 	}
 
 	// Generate tokens
-	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, user.TokenVersion)
+	token, refreshToken, err := issueTokenPair(uc.tokenProvider, user.ID, user.Email, user.TokenVersion)
 	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate token after verification")
-		return nil, err
-	}
-
-	refreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, user.TokenVersion)
-	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate refresh token after verification")
+		uc.logger.WithError(err).Error("Failed to issue tokens after verification")
 		return nil, err
 	}
 

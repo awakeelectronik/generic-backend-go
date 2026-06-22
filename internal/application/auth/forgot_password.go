@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
-	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -55,15 +54,7 @@ func (uc *ForgotPasswordUseCase) Execute(ctx context.Context, input ForgotPasswo
 		return nil, err
 	}
 
-	var (
-		user *domain.User
-		err  error
-	)
-	if strings.TrimSpace(input.Email) != "" {
-		user, err = uc.userRepo.GetByEmail(ctx, input.Email)
-	} else {
-		user, err = uc.userRepo.GetByPhone(ctx, input.Phone)
-	}
+	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
 	if err != nil {
 		uc.logger.WithError(err).Warn("forgot password: user lookup failed")
 		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil

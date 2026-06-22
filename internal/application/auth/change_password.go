@@ -82,16 +82,10 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswo
 		uc.logger.WithError(err).Error("Failed to update password")
 		return nil, err
 	}
-	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, newTokenVersion)
+	token, refreshToken, err := issueTokenPair(uc.tokenProvider, user.ID, user.Email, newTokenVersion)
 	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate token after password change")
-		return nil, appErrors.ErrInternalServer
-	}
-
-	refreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, newTokenVersion)
-	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate refresh token after password change")
-		return nil, appErrors.ErrInternalServer
+		uc.logger.WithError(err).Error("Failed to issue tokens after password change")
+		return nil, err
 	}
 
 	uc.logger.WithField("user_id", user.ID).Info("Password changed successfully")

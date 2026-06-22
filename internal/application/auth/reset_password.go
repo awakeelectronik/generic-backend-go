@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
-	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -66,17 +65,7 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		return nil, err
 	}
 
-	var (
-		user *domain.User
-		err  error
-	)
-
-	if strings.TrimSpace(input.Email) != "" {
-		user, err = uc.userRepo.GetByEmail(ctx, input.Email)
-	} else {
-		user, err = uc.userRepo.GetByPhone(ctx, input.Phone)
-	}
-
+	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to fetch user for password reset")
 		return nil, err
@@ -100,16 +89,10 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		uc.logger.WithError(err).Error("Failed to update password")
 		return nil, err
 	}
-	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, newTokenVersion)
+	token, refreshToken, err := issueTokenPair(uc.tokenProvider, user.ID, user.Email, newTokenVersion)
 	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate token after password reset")
-		return nil, appErrors.ErrInternalServer
-	}
-
-	refreshToken, err := uc.tokenProvider.GenerateRefreshToken(user.ID, newTokenVersion)
-	if err != nil {
-		uc.logger.WithError(err).Error("Failed to generate refresh token after password reset")
-		return nil, appErrors.ErrInternalServer
+		uc.logger.WithError(err).Error("Failed to issue tokens after password reset")
+		return nil, err
 	}
 
 	return &ResetPasswordOutput{
