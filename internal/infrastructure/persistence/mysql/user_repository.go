@@ -277,7 +277,10 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	rows, err := result.RowsAffected()
-	if err != nil || rows == 0 {
+	if err != nil {
+		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error deleting user", 500, err)
+	}
+	if rows == 0 {
 		return appErrors.NewNotFoundError("User")
 	}
 

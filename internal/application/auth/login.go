@@ -24,13 +24,6 @@ func (li LoginInput) Validate() error {
 	return nil
 }
 
-type LoginOutput struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
-	UserID       string `json:"user_id"`
-	Email        string `json:"email"`
-}
-
 type LoginUseCase struct {
 	userRepo       application.UserRepository
 	passwordHasher application.PasswordHasher
@@ -52,7 +45,7 @@ func NewLoginUseCase(
 	}
 }
 
-func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOutput, error) {
+func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*SessionOutput, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -95,7 +88,7 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*LoginOu
 
 	uc.logger.WithField("user_id", user.ID).Info("User logged in successfully")
 
-	return &LoginOutput{
+	return &SessionOutput{
 		Token:        token,
 		RefreshToken: refreshToken,
 		UserID:       user.ID,

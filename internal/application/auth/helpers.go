@@ -37,3 +37,13 @@ func findUserByEmailOrPhone(ctx context.Context, repo application.UserRepository
 	}
 	return nil, nil
 }
+
+// SessionOutput is the authenticated-session payload returned by every flow that
+// logs a user in: login, verify-code, and password change/reset. They all return
+// the same shape, so they share one type instead of four identical structs.
+type SessionOutput struct {
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
+	UserID       string `json:"user_id"`
+	Email        string `json:"email"`
+}

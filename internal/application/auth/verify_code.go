@@ -24,13 +24,6 @@ func (v VerifyCodeInput) Validate() error {
 	return nil
 }
 
-type VerifyCodeOutput struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
-	UserID       string `json:"user_id"`
-	Email        string `json:"email"`
-}
-
 type VerifyCodeUseCase struct {
 	userRepo       application.UserRepository
 	tokenProvider  application.TokenProvider
@@ -52,7 +45,7 @@ func NewVerifyCodeUseCase(
 	}
 }
 
-func (uc *VerifyCodeUseCase) Execute(ctx context.Context, input VerifyCodeInput) (*VerifyCodeOutput, error) {
+func (uc *VerifyCodeUseCase) Execute(ctx context.Context, input VerifyCodeInput) (*SessionOutput, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -91,7 +84,7 @@ func (uc *VerifyCodeUseCase) Execute(ctx context.Context, input VerifyCodeInput)
 
 	uc.logger.WithField("user_id", user.ID).Info("User verified and logged in successfully")
 
-	return &VerifyCodeOutput{
+	return &SessionOutput{
 		Token:        token,
 		RefreshToken: refreshToken,
 		UserID:       user.ID,

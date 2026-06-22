@@ -28,13 +28,6 @@ func (c ChangePasswordInput) Validate() error {
 	return nil
 }
 
-type ChangePasswordOutput struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
-	UserID       string `json:"user_id"`
-	Email        string `json:"email"`
-}
-
 type ChangePasswordUseCase struct {
 	userRepo       application.UserRepository
 	passwordHasher application.PasswordHasher
@@ -56,7 +49,7 @@ func NewChangePasswordUseCase(
 	}
 }
 
-func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswordInput) (*ChangePasswordOutput, error) {
+func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswordInput) (*SessionOutput, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -90,7 +83,7 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswo
 
 	uc.logger.WithField("user_id", user.ID).Info("Password changed successfully")
 
-	return &ChangePasswordOutput{
+	return &SessionOutput{
 		Token:        token,
 		RefreshToken: refreshToken,
 		UserID:       user.ID,

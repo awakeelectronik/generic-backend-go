@@ -29,13 +29,6 @@ func (r ResetPasswordInput) Validate() error {
 	return nil
 }
 
-type ResetPasswordOutput struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
-	UserID       string `json:"user_id"`
-	Email        string `json:"email"`
-}
-
 type ResetPasswordUseCase struct {
 	userRepo        application.UserRepository
 	passwordHasher  application.PasswordHasher
@@ -60,7 +53,7 @@ func NewResetPasswordUseCase(
 	}
 }
 
-func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPasswordInput) (*ResetPasswordOutput, error) {
+func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPasswordInput) (*SessionOutput, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -95,7 +88,7 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		return nil, err
 	}
 
-	return &ResetPasswordOutput{
+	return &SessionOutput{
 		Token:        token,
 		RefreshToken: refreshToken,
 		UserID:       user.ID,

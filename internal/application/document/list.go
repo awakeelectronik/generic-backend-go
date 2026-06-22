@@ -36,8 +36,8 @@ func (uc *ListDocumentsUseCase) Execute(ctx context.Context, userID string, limi
 	if limit < 1 {
 		limit = 10
 	}
-	if limit > 100 {
-		limit = 100 // tope para evitar páginas gigantes / abuso de recursos
+	if limit > application.MaxPageSize {
+		limit = application.MaxPageSize
 	}
 	if offset < 0 {
 		offset = 0

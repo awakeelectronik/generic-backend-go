@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	"github.com/awakeelectronik/generic-backend-go/internal/application/document"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -105,8 +106,8 @@ func (h *DocumentHandler) List(c *gin.Context) {
 	if pageSize < 1 {
 		pageSize = 10
 	}
-	if pageSize > 100 {
-		pageSize = 100 // tope para que offset y LIMIT sean coherentes
+	if pageSize > application.MaxPageSize {
+		pageSize = application.MaxPageSize
 	}
 	offset := (page - 1) * pageSize
 
