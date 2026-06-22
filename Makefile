@@ -1,4 +1,4 @@
-.PHONY: help test test-summary test-integration test-verbose test-coverage test-race clean fmt vet lint
+.PHONY: help test test-summary test-integration test-integration-docker db-test-up db-test-down test-verbose test-coverage test-race clean fmt vet lint
 
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
@@ -10,7 +10,10 @@ help:
 	@echo "🧪 Testing:"
 	@echo "  make test              - Ejecutar todos los tests"
 	@echo "  make test-summary      - Tests con resumen corto (RECOMENDADO)"
-	@echo "  make test-integration  - Solo tests de integración"
+	@echo "  make test-integration  - Solo tests de integración (requiere MySQL ya corriendo)"
+	@echo "  make test-integration-docker - Integración con MySQL desechable en Docker (1 comando)"
+	@echo "  make db-test-up        - Levanta el MySQL de test (Docker)"
+	@echo "  make db-test-down      - Apaga y borra el MySQL de test (Docker)"
 	@echo "  make test-verbose      - Tests con output detallado"
 	@echo "  make test-coverage     - Tests con coverage report (HTML)"
 	@echo "  make test-race         - Tests con race detector"
@@ -49,10 +52,30 @@ test-summary:
 			else { print "⚠️  Algunos tests fallaron" } \
 		}'
 
-# Solo tests de integración
+# Solo tests de integración (asume un MySQL ya disponible en TEST_DB_*)
 test-integration:
 	@echo "🔗 Ejecutando tests de integración..."
 	@go test -timeout=$(TEST_TIMEOUT) -v ./test/integration
+
+# Integración end-to-end: levanta un MySQL desechable en Docker, corre los tests
+# y lo apaga siempre (pase o falle). Un solo comando para verificar contra BD real.
+test-integration-docker:
+	@echo "🐳 Levantando MySQL de test (Docker)..."
+	@docker compose -f docker-compose.test.yml up -d --wait
+	@echo "🔗 Ejecutando tests de integración..."
+	@go test -timeout=$(TEST_TIMEOUT) -v ./test/integration ; status=$$? ; \
+		echo "🧹 Apagando MySQL de test..." ; \
+		docker compose -f docker-compose.test.yml down -v ; \
+		exit $$status
+
+# Levanta/para el MySQL de test por separado (para iterar con `make test-integration`).
+db-test-up:
+	@echo "🐳 Levantando MySQL de test (Docker)..."
+	@docker compose -f docker-compose.test.yml up -d --wait
+
+db-test-down:
+	@echo "🧹 Apagando MySQL de test..."
+	@docker compose -f docker-compose.test.yml down -v
 
 # Tests con output muy detallado
 test-verbose:

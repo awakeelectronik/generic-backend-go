@@ -2,6 +2,29 @@
 
 This file documents how to run the test suite and notable cases.
 
+## Integration tests (MySQL)
+
+The tests in `test/integration/` need a real MySQL. The fastest path is a
+disposable container — one command, brought up and torn down automatically:
+
+```bash
+make test-integration-docker
+```
+
+Or manage the database yourself (handy for iterating):
+
+```bash
+make db-test-up         # start a disposable MySQL (Docker)
+make test-integration   # run the suite against it, repeatable
+make db-test-down       # stop + wipe
+```
+
+Connection settings live in `test/integration/setup_test.go` and match
+`docker-compose.test.yml` (root/`password` @ `127.0.0.1:3306`, DB
+`genericbackendtest`). Override them with `TEST_DB_*` env vars or a `.env.test`
+(copy `.env.test.example`). The DB name **must contain "test"** — a safety guard
+checked before the suite drops it. Unit tests need no DB and run with `go test`.
+
 ## Login by phone
 
 - The authentication flow supports logging in using either `email` + `password` or `phone` + `password`.

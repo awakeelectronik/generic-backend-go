@@ -1,0 +1,26 @@
+# Disposable MySQL for the integration test suite (test/integration).
+# Matches the TEST_DB_* defaults in test/integration/setup_test.go, so
+# `make test-integration-docker` works with no extra configuration.
+#
+#   docker compose -f docker-compose.test.yml up -d --wait
+#   go test ./test/integration/...
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Storage is tmpfs (in-memory): fast and leaves nothing behind between runs.
+services:
+  mysql-test:
+    image: mysql:8.0
+    container_name: gbg-mysql-test
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: genericbackendtest
+    ports:
+      - "3306:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ppassword"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
