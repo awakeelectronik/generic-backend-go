@@ -1,8 +1,10 @@
 package document
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"strings"
 
 	apperrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
@@ -11,6 +13,10 @@ import (
 	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 	"github.com/sirupsen/logrus"
 )
+
+// sniffLen es la ventana que http.DetectContentType inspecciona (512 bytes,
+// como define la spec de MIME sniffing del WHATWG).
+const sniffLen = 512
 
 type UploadDocumentUseCase struct {
 	documentRepo application.DocumentRepository
@@ -47,13 +53,17 @@ func NewUploadDocumentUseCase(
 	}
 }
 
+// Execute valida y persiste la subida. El tipo MIME NO se toma del cliente: se
+// infiere de los bytes reales del archivo (http.DetectContentType), porque el
+// Content-Type y la extensión los controla quien sube. El tipo inferido es a la
+// vez el filtro de seguridad y lo que se guarda, así la descarga sirve el tipo
+// verificado.
 func (u *UploadDocumentUseCase) Execute(
 	ctx context.Context,
 	userID string,
 	fileName string,
 	file io.Reader,
 	fileSize int64,
-	mimeType string,
 ) (*domain.Document, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, apperrors.NewAppError("VALIDATION_ERROR", "userID es obligatorio", 400)
@@ -74,7 +84,19 @@ func (u *UploadDocumentUseCase) Execute(
 			413,
 		)
 	}
-	if !u.isMimeAllowed(mimeType) {
+
+	// Leemos los primeros bytes para inferir el MIME real. ReadFull tolera
+	// archivos más cortos que sniffLen (EOF/ErrUnexpectedEOF no son fallo).
+	head := make([]byte, sniffLen)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		u.logger.WithError(err).Error("Failed to read upload for MIME sniffing")
+		return nil, apperrors.NewAppErrorWithInternal("STORAGE_ERROR", "Error leyendo archivo", 500, err)
+	}
+	head = head[:n]
+
+	detectedMime := http.DetectContentType(head)
+	if !u.isMimeAllowed(detectedMime) {
 		return nil, apperrors.NewAppError(
 			"UNSUPPORTED_MEDIA_TYPE",
 			"Tipo de archivo no permitido",
@@ -82,13 +104,16 @@ func (u *UploadDocumentUseCase) Execute(
 		)
 	}
 
-	storedPath, originalName, err := u.fileStorage.Save(ctx, userID, fileName, file, fileSize)
+	// Re-anteponemos los bytes ya leídos para que Save escriba el archivo completo.
+	full := io.MultiReader(bytes.NewReader(head), file)
+
+	storedPath, originalName, err := u.fileStorage.Save(ctx, userID, fileName, full, fileSize)
 	if err != nil {
 		u.logger.WithError(err).Error("Failed to save file")
 		return nil, apperrors.NewAppErrorWithInternal("STORAGE_ERROR", "Error guardando archivo", 500, err)
 	}
 
-	doc, err := domain.NewDocument(userID, originalName, storedPath, mimeType, fileSize)
+	doc, err := domain.NewDocument(userID, originalName, storedPath, detectedMime, fileSize)
 	if err != nil {
 		return nil, apperrors.NewAppError("VALIDATION_ERROR", err.Error(), 400)
 	}

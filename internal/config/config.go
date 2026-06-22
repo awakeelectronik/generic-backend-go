@@ -65,6 +65,13 @@ type ServerConfig struct {
 	// pero SIN credenciales (combinación inválida según la spec). Para usar
 	// credenciales, lista orígenes concretos.
 	AllowedOrigins []string
+	// TrustedProxies son las IPs/CIDR de los proxies inversos de confianza (env
+	// TRUSTED_PROXIES, separados por coma). Solo se honra el X-Forwarded-For que
+	// venga de estos saltos; si está vacío, Gin ignora XFF y usa la IP del socket
+	// directo. Dejarlo vacío salvo que la app viva detrás de un proxy/LB, porque
+	// confiar en cualquier proxy permite spoofear la IP cliente (evade el
+	// rate-limit por IP).
+	TrustedProxies []string
 }
 
 type DatabaseConfig struct {
@@ -101,6 +108,8 @@ func Load() (*Config, error) {
 			Environment:    getEnv("ENVIRONMENT", "development"),
 			BaseURL:        getEnv("BASE_URL", "http://localhost:8080"),
 			AllowedOrigins: getEnvCSV("CORS_ALLOWED_ORIGINS", []string{"*"}),
+			// Default nil = no se confía en ningún proxy (IP = socket directo).
+			TrustedProxies: getEnvCSV("TRUSTED_PROXIES", nil),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),

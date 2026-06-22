@@ -46,6 +46,14 @@ func main() {
 
 	router := gin.Default()
 
+	// Trusted proxies: por defecto Gin confía en TODOS los proxies, lo que deja
+	// que un cliente falsifique X-Forwarded-For y evada el rate-limit por IP.
+	// Restringimos a la allowlist (vacía = no se confía en ninguno, se usa la IP
+	// del socket directo).
+	if err := router.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		logger.Fatalf("Invalid TRUSTED_PROXIES: %v", err)
+	}
+
 	// Middleware
 	router.Use(middleware.CORSMiddleware(cfg.Server.AllowedOrigins))
 	router.Use(middleware.LoggingMiddleware(logger))

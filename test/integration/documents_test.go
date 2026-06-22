@@ -13,6 +13,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// jpegBytes es un JPEG mínimo válido (cabecera JFIF + EOI). El upload ahora
+// infiere el MIME de los bytes reales, así que el contenido debe olfatearse
+// como image/jpeg o el use case lo rechaza con 415.
+var jpegBytes = []byte{
+	0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+	0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+}
+
 func TestDocumentUpload(t *testing.T) {
 	testDB := SetupTestDB(t)
 	defer TeardownTestDB(t, testDB)
@@ -33,14 +41,14 @@ func TestDocumentUpload(t *testing.T) {
 		{
 			name:           "Upload document successful",
 			fileName:       "test.jpg",
-			fileContent:    []byte("fake image content"),
+			fileContent:    jpegBytes,
 			hasAuth:        true,
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "Upload without authentication",
 			fileName:       "test.jpg",
-			fileContent:    []byte("fake image content"),
+			fileContent:    jpegBytes,
 			hasAuth:        false,
 			expectedStatus: http.StatusUnauthorized,
 		},
@@ -108,7 +116,7 @@ func TestDocumentUploadSameFileMultipleTimes(t *testing.T) {
 			writer := multipart.NewWriter(buf)
 
 			part, _ := writer.CreateFormFile("document", "same_file.jpg")
-			io.Copy(part, bytes.NewBuffer([]byte("fake image content")))
+			io.Copy(part, bytes.NewBuffer(jpegBytes))
 			writer.Close()
 
 			req := httptest.NewRequest(

@@ -152,7 +152,10 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		logger,
 	)
 	userHandler := handlers.NewUserHandler(listUsersUC, getUserUC, updateUserUC, deleteUserUC, logger)
-	documentHandler := handlers.NewDocumentHandler(uploadDocUC, listDocUC, downloadDocUC, logger)
+	// Holgura de 1 MiB sobre el tamaño máx de archivo para el sobre multipart
+	// (boundary, headers de parte, otros campos del form).
+	maxUploadBytes := cfg.Storage.MaxFileSize + (1 << 20)
+	documentHandler := handlers.NewDocumentHandler(uploadDocUC, listDocUC, downloadDocUC, maxUploadBytes, logger)
 
 	// ========== RETURN DEPENDENCIES ==========
 	return &Dependencies{

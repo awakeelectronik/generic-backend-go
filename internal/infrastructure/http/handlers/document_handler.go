@@ -1,11 +1,10 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,20 +18,26 @@ type DocumentHandler struct {
 	uploadUC   *document.UploadDocumentUseCase
 	listUC     *document.ListDocumentsUseCase
 	downloadUC *document.DownloadDocumentUseCase
-	logger     *logrus.Logger
+	// maxUploadBytes acota el body de /upload a nivel transporte (tamaño máx de
+	// archivo + holgura para el sobre multipart), evitando que el parser derrame
+	// a disco antes de la validación de tamaño del use case.
+	maxUploadBytes int64
+	logger         *logrus.Logger
 }
 
 func NewDocumentHandler(
 	uploadUC *document.UploadDocumentUseCase,
 	listUC *document.ListDocumentsUseCase,
 	downloadUC *document.DownloadDocumentUseCase,
+	maxUploadBytes int64,
 	logger *logrus.Logger,
 ) *DocumentHandler {
 	return &DocumentHandler{
-		uploadUC:   uploadUC,
-		listUC:     listUC,
-		downloadUC: downloadUC,
-		logger:     logger,
+		uploadUC:       uploadUC,
+		listUC:         listUC,
+		downloadUC:     downloadUC,
+		maxUploadBytes: maxUploadBytes,
+		logger:         logger,
 	}
 }
 
@@ -44,8 +49,18 @@ func (h *DocumentHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	// Acota el body ANTES de parsear el multipart: sin esto el parser de Gin
+	// bufferea/derrama a disco el archivo completo antes de que el use case
+	// valide el tamaño. MaxBytesReader corta la lectura al exceder el límite.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxUploadBytes)
+
 	file, err := c.FormFile("document")
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			ErrorResponse(c, http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "El archivo excede el tamaño máximo permitido")
+			return
+		}
 		h.logger.WithError(err).Warn("Missing file in request")
 		ErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", "Archivo 'document' es obligatorio")
 		return
@@ -59,23 +74,14 @@ func (h *DocumentHandler) Upload(c *gin.Context) {
 	}
 	defer src.Close()
 
-	// El cliente puede no enviar Content-Type por parte (e.g. multipart simple).
-	// Inferimos desde la extensión para que la validación de MIME en el use
-	// case tenga algo concreto contra qué chequear.
-	mimeType := strings.TrimSpace(file.Header.Get("Content-Type"))
-	if mimeType == "" || mimeType == "application/octet-stream" {
-		if guessed := mime.TypeByExtension(strings.ToLower(filepath.Ext(file.Filename))); guessed != "" {
-			mimeType = guessed
-		}
-	}
-
+	// El MIME se infiere de los bytes reales dentro del use case; no se toma del
+	// Content-Type ni de la extensión que envía el cliente.
 	doc, err := h.uploadUC.Execute(
 		c.Request.Context(),
 		userID,
 		file.Filename,
 		src,
 		file.Size,
-		mimeType,
 	)
 	if err != nil {
 		HandleError(c, err)

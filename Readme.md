@@ -33,6 +33,7 @@ make run
 | `PORT` | `8080` | |
 | `BASE_URL` | `http://localhost:8080` | |
 | `CORS_ALLOWED_ORIGINS` | `*` | Orígenes permitidos, separados por coma. `*` = cualquiera **sin** credenciales (la combinación `*`+credentials es inválida); orígenes concretos se reflejan **con** `Allow-Credentials` + `Vary: Origin`. |
+| `TRUSTED_PROXIES` | `` (vacío) | IPs/CIDR de proxies inversos de confianza, separados por coma. Solo se honra `X-Forwarded-For` proveniente de ellos. Vacío = se ignora XFF y se usa la IP del socket directo. Configurar **solo** detrás de proxy/LB: confiar en cualquier proxy deja spoofear la IP cliente y evadir el rate-limit. |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | — | |
 | `DB_MAX_CONN` | `25` | |
 | `DB_IDLE_CONN` | `5` | |
