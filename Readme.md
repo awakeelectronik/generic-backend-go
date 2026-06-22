@@ -32,6 +32,7 @@ make run
 | `ENVIRONMENT` | `development` | |
 | `PORT` | `8080` | |
 | `BASE_URL` | `http://localhost:8080` | |
+| `CORS_ALLOWED_ORIGINS` | `*` | Orígenes permitidos, separados por coma. `*` = cualquiera **sin** credenciales (la combinación `*`+credentials es inválida); orígenes concretos se reflejan **con** `Allow-Credentials` + `Vary: Origin`. |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | — | |
 | `DB_MAX_CONN` | `25` | |
 | `DB_IDLE_CONN` | `5` | |
