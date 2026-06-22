@@ -54,8 +54,10 @@ func (ls *LocalStorage) Save(
 	// Generar nombre único: {UUID}.{extensión}
 	uniqueName := uuid.NewString() + ext
 
-	// Crear carpeta por usuario si no existe: uploads/{userID}/
-	userDir := filepath.Join(ls.basePath, "uploads", userID)
+	// Crear carpeta por usuario: documents/uploads/{userID}/. DEBE coincidir con
+	// relativeStoredPath de abajo: Get() une la ruta guardada sobre basePath, así
+	// que si escribimos en otra carpeta la descarga falla con NotFound.
+	userDir := filepath.Join(ls.basePath, "documents", "uploads", userID)
 	if err := os.MkdirAll(userDir, 0755); err != nil {
 		return "", "", appErrors.NewAppErrorWithInternal(
 			"STORAGE_ERROR",
@@ -65,7 +67,7 @@ func (ls *LocalStorage) Save(
 		)
 	}
 
-	// Path completo en disco: /basePath/uploads/{userID}/{UUID}.{ext}
+	// Path completo en disco: {basePath}/documents/uploads/{userID}/{UUID}.{ext}
 	fullPath := filepath.Join(userDir, uniqueName)
 
 	// Crear el archivo en disco
