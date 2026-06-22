@@ -51,29 +51,26 @@ func (rl *rateLimiter) cleanupVisitors() {
 	}
 }
 
-func (rl *rateLimiter) getVisitor(ip string) *visitor {
+func (rl *rateLimiter) allow(ip string) bool {
+	// Una sola sección crítica: el get-or-create y la actualización del contador
+	// deben ser atómicos. Antes se hacían bajo dos locks distintos, dejando una
+	// ventana en la que cleanupVisitors podía borrar la entrada entre medias y
+	// se perdía la cuenta (TOCTOU que debilitaba el límite).
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
+
+	now := time.Now()
 
 	v, exists := rl.visitors[ip]
 	if !exists {
-		v = &visitor{lastSeen: time.Now(), count: 0}
-		rl.visitors[ip] = v
+		rl.visitors[ip] = &visitor{lastSeen: now, count: 1}
+		return true
 	}
 
-	return v
-}
-
-func (rl *rateLimiter) allow(ip string) bool {
-	v := rl.getVisitor(ip)
-
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
 	// Reset count if window has passed
-	if time.Since(v.lastSeen) > rl.window {
+	if now.Sub(v.lastSeen) > rl.window {
 		v.count = 0
-		v.lastSeen = time.Now()
+		v.lastSeen = now
 	}
 
 	// Check if rate limit exceeded
@@ -82,7 +79,7 @@ func (rl *rateLimiter) allow(ip string) bool {
 	}
 
 	v.count++
-	v.lastSeen = time.Now()
+	v.lastSeen = now
 	return true
 }
 

@@ -68,11 +68,11 @@ func (uc *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Ref
 	// Rotación real: subir token_version invalida el refresh recién consumido
 	// (y cualquier access token aún vivo). Un replay del refresh anterior
 	// fallará en la comparación de version arriba.
-	if err := uc.userRepo.BumpTokenVersion(ctx, user.ID); err != nil {
+	newTokenVersion, err := uc.userRepo.BumpTokenVersion(ctx, user.ID)
+	if err != nil {
 		uc.logger.WithError(err).Error("Failed to bump token version on refresh")
 		return nil, appErrors.ErrInternalServer
 	}
-	newTokenVersion := user.TokenVersion + 1
 
 	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, newTokenVersion)
 	if err != nil {

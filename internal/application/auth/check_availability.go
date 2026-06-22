@@ -59,8 +59,11 @@ func (uc *CheckAvailabilityUseCase) Execute(ctx context.Context, input CheckAvai
 	if input.Email != "" {
 		user, err := uc.userRepo.GetByEmail(ctx, input.Email)
 		if err != nil {
+			// Fail-closed: ante un error de BD NO afirmamos "disponible"; eso
+			// podía dejar pasar un duplicado hacia /register (la UNIQUE lo
+			// frenaría, pero con un 500 confuso). Devolvemos error explícito.
 			uc.logger.WithError(err).Error("Error checking email availability")
-			return &CheckAvailabilityOutput{Available: true}, nil
+			return nil, appErrors.ErrInternalServer
 		}
 		available = user == nil
 		checkType = "email"
@@ -68,7 +71,7 @@ func (uc *CheckAvailabilityUseCase) Execute(ctx context.Context, input CheckAvai
 		user, err := uc.userRepo.GetByPhone(ctx, input.Phone)
 		if err != nil {
 			uc.logger.WithError(err).Error("Error checking phone availability")
-			return &CheckAvailabilityOutput{Available: true}, nil
+			return nil, appErrors.ErrInternalServer
 		}
 		available = user == nil
 		checkType = "phone"

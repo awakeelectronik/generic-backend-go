@@ -15,11 +15,15 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	GetByPhone(ctx context.Context, phone string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
-	UpdatePasswordAndBumpTokenVersion(ctx context.Context, userID, passwordHash string) error
+	// UpdatePasswordAndBumpTokenVersion cambia el hash y sube token_version en 1
+	// de forma atómica; devuelve la nueva versión resultante en la BD (no la
+	// calculada en memoria) para que el token recién emitido coincida.
+	UpdatePasswordAndBumpTokenVersion(ctx context.Context, userID, passwordHash string) (int, error)
 	// BumpTokenVersion incrementa token_version en 1, invalidando todos los
 	// access/refresh tokens previos del usuario. Lo usa /auth/refresh para
-	// rotar el refresh: el que acaba de presentarse queda revocado.
-	BumpTokenVersion(ctx context.Context, userID string) error
+	// rotar el refresh: el que acaba de presentarse queda revocado. Devuelve la
+	// nueva versión resultante en la BD para firmar el token con el valor real.
+	BumpTokenVersion(ctx context.Context, userID string) (int, error)
 	Delete(ctx context.Context, id string) error
 	// ListWithSummary devuelve la página filtrada por q (sobre name, email, phone) más
 	// totales agregados (totalUsers, activeUsers, inactiveUsers). q vacío = sin filtro.

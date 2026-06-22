@@ -203,53 +203,69 @@ func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 // BumpTokenVersion increments token_version by 1, revoking every JWT
 // (access and refresh) issued before this point. Used by /auth/refresh so
 // rotation is real: the refresh token just consumed cannot be replayed.
-func (r *UserRepository) BumpTokenVersion(ctx context.Context, userID string) error {
+func (r *UserRepository) BumpTokenVersion(ctx context.Context, userID string) (int, error) {
+	// LAST_INSERT_ID(expr) fija y devuelve, por conexión, el valor exacto que
+	// este UPDATE escribió. Así dos refresh concurrentes obtienen cada uno su
+	// versión real (no la leída antes en memoria), evitando firmar un token con
+	// una versión ya superada en BD (que quedaría inválido al instante).
 	query := `
 		UPDATE users
-		SET token_version = token_version + 1, updated_at = ?
+		SET token_version = LAST_INSERT_ID(token_version + 1), updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query, time.Now(), userID)
 	if err != nil {
-		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error rotando refresh token", 500, err)
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error rotando refresh token", 500, err)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando rotación", 500, err)
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando rotación", 500, err)
 	}
 	if rows == 0 {
-		return appErrors.NewNotFoundError("Usuario")
+		return 0, appErrors.NewNotFoundError("Usuario")
 	}
 
-	return nil
+	newVersion, err := result.LastInsertId()
+	if err != nil {
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando rotación", 500, err)
+	}
+
+	return int(newVersion), nil
 }
 
 // UpdatePasswordAndBumpTokenVersion swaps the password hash and increments
 // token_version atomically. The version bump revokes every JWT issued before
 // this point; combined with auth middleware, it forces re-login.
-func (r *UserRepository) UpdatePasswordAndBumpTokenVersion(ctx context.Context, userID, passwordHash string) error {
+func (r *UserRepository) UpdatePasswordAndBumpTokenVersion(ctx context.Context, userID, passwordHash string) (int, error) {
+	// Ver BumpTokenVersion: LAST_INSERT_ID(expr) devuelve el valor escrito para
+	// firmar el token nuevo con la versión real resultante en BD.
 	query := `
 		UPDATE users
-		SET password = ?, token_version = token_version + 1, updated_at = ?
+		SET password = ?, token_version = LAST_INSERT_ID(token_version + 1), updated_at = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	result, err := execContextFrom(ctx, r.db).ExecContext(ctx, query, passwordHash, time.Now(), userID)
 	if err != nil {
-		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error actualizando contraseña", 500, err)
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error actualizando contraseña", 500, err)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando cambios", 500, err)
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando cambios", 500, err)
 	}
 	if rows == 0 {
-		return appErrors.NewNotFoundError("Usuario")
+		return 0, appErrors.NewNotFoundError("Usuario")
 	}
 
-	return nil
+	newVersion, err := result.LastInsertId()
+	if err != nil {
+		return 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando cambios", 500, err)
+	}
+
+	return int(newVersion), nil
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id string) error {
@@ -317,6 +333,11 @@ func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int,
 			user.DeletedAt = &deletedAt.Time
 		}
 		users = append(users, &user)
+	}
+	// rows.Err() captura errores de iteración (p. ej. conexión cortada a mitad
+	// del result set), que de otro modo se confundirían con "no hay más filas".
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error listing users", 500, err)
 	}
 
 	// Totals are computed without the q filter and without LIMIT/OFFSET so the

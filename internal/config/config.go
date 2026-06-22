@@ -60,6 +60,11 @@ type ServerConfig struct {
 	Port        string
 	Environment string
 	BaseURL     string
+	// AllowedOrigins son los orígenes permitidos por CORS (env
+	// CORS_ALLOWED_ORIGINS, separados por coma). "*" habilita cualquier origen
+	// pero SIN credenciales (combinación inválida según la spec). Para usar
+	// credenciales, lista orígenes concretos.
+	AllowedOrigins []string
 }
 
 type DatabaseConfig struct {
@@ -92,9 +97,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Port:        getEnv("PORT", "8080"),
-			Environment: getEnv("ENVIRONMENT", "development"),
-			BaseURL:     getEnv("BASE_URL", "http://localhost:8080"),
+			Port:           getEnv("PORT", "8080"),
+			Environment:    getEnv("ENVIRONMENT", "development"),
+			BaseURL:        getEnv("BASE_URL", "http://localhost:8080"),
+			AllowedOrigins: getEnvCSV("CORS_ALLOWED_ORIGINS", []string{"*"}),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -163,6 +169,26 @@ func getEnvInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+// getEnvCSV lee una variable separada por comas y devuelve los valores no
+// vacíos ya trimmeados. Si la variable no está, devuelve defaultValue.
+func getEnvCSV(key string, defaultValue []string) []string {
+	raw := os.Getenv(key)
+	if strings.TrimSpace(raw) == "" {
+		return defaultValue
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return defaultValue
+	}
+	return out
 }
 
 func getEnvBool(key string, defaultValue bool) bool {

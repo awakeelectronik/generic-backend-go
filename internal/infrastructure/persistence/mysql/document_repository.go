@@ -94,6 +94,11 @@ func (r *DocumentRepository) GetByUserID(ctx context.Context, userID string, lim
 		json.Unmarshal(metadataJSON, &doc.Metadata)
 		documents = append(documents, &doc)
 	}
+	// rows.Err() captura errores de iteración que de otro modo se confundirían
+	// con el fin normal del result set.
+	if err := rows.Err(); err != nil {
+		return nil, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error listing documents", 500, err)
+	}
 
 	return documents, nil
 }

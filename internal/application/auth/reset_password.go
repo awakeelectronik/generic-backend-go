@@ -95,12 +95,11 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		return nil, appErrors.ErrInternalServer
 	}
 
-	if err := uc.userRepo.UpdatePasswordAndBumpTokenVersion(ctx, user.ID, newHash); err != nil {
+	newTokenVersion, err := uc.userRepo.UpdatePasswordAndBumpTokenVersion(ctx, user.ID, newHash)
+	if err != nil {
 		uc.logger.WithError(err).Error("Failed to update password")
 		return nil, err
 	}
-
-	newTokenVersion := user.TokenVersion + 1
 	token, err := uc.tokenProvider.GenerateToken(user.ID, user.Email, newTokenVersion)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to generate token after password reset")

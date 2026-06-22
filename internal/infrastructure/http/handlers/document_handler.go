@@ -105,6 +105,9 @@ func (h *DocumentHandler) List(c *gin.Context) {
 	if pageSize < 1 {
 		pageSize = 10
 	}
+	if pageSize > 100 {
+		pageSize = 100 // tope para que offset y LIMIT sean coherentes
+	}
 	offset := (page - 1) * pageSize
 
 	out, err := h.listUC.Execute(c.Request.Context(), userID, pageSize, offset)

@@ -63,6 +63,9 @@ func (uc *ListUsersUseCase) Execute(ctx context.Context, page, pageSize int, q s
 	if pageSize < 1 {
 		pageSize = 20
 	}
+	if pageSize > 100 {
+		pageSize = 100 // tope para evitar páginas gigantes / abuso de recursos
+	}
 	offset := (page - 1) * pageSize
 	q = strings.TrimSpace(q)
 
