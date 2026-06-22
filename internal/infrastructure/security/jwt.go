@@ -20,16 +20,26 @@ type JWTProvider struct {
 	config *JWTConfig
 }
 
+// Token types embedded in the "typ" claim so an access token can't be replayed
+// as a refresh token (or vice versa) — they share the same HMAC secret, so
+// without this they'd be structurally interchangeable.
+const (
+	tokenTypeAccess  = "access"
+	tokenTypeRefresh = "refresh"
+)
+
 type Claims struct {
 	UserID       string `json:"user_id"`
 	Email        string `json:"email"`
 	TokenVersion int    `json:"token_version"`
+	Type         string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
 type RefreshClaims struct {
 	UserID       string `json:"user_id"`
 	TokenVersion int    `json:"token_version"`
+	Type         string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
@@ -49,6 +59,7 @@ func (p *JWTProvider) GenerateToken(userID, email string, tokenVersion int) (str
 		UserID:       userID,
 		Email:        email,
 		TokenVersion: tokenVersion,
+		Type:         tokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(p.config.ExpirationHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -64,6 +75,7 @@ func (p *JWTProvider) GenerateRefreshToken(userID string, tokenVersion int) (str
 	claims := RefreshClaims{
 		UserID:       userID,
 		TokenVersion: tokenVersion,
+		Type:         tokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(p.config.RefreshHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -87,6 +99,9 @@ func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email st
 	if err != nil || !token.Valid {
 		return "", "", 0, fmt.Errorf("invalid token")
 	}
+	if claims.Type != tokenTypeAccess {
+		return "", "", 0, fmt.Errorf("invalid token")
+	}
 
 	return claims.UserID, claims.Email, claims.TokenVersion, nil
 }
@@ -101,6 +116,9 @@ func (p *JWTProvider) ValidateRefreshToken(tokenString string) (userID string, t
 	})
 
 	if err != nil || !token.Valid {
+		return "", 0, fmt.Errorf("invalid refresh token")
+	}
+	if claims.Type != tokenTypeRefresh {
 		return "", 0, fmt.Errorf("invalid refresh token")
 	}
 

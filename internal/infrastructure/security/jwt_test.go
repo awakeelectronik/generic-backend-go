@@ -77,3 +77,21 @@ func TestJWT_rejectsGarbage(t *testing.T) {
 		t.Fatalf("expected a malformed token to be rejected")
 	}
 }
+
+// A refresh token must not pass as an access token (shared HMAC secret; the
+// "typ" claim is what keeps them distinct).
+func TestJWT_refreshTokenRejectedAsAccess(t *testing.T) {
+	p := newJWT()
+	refresh, _ := p.GenerateRefreshToken("u1", 1)
+	if _, _, _, err := p.ValidateToken(refresh); err == nil {
+		t.Fatalf("a refresh token must not validate as an access token")
+	}
+}
+
+func TestJWT_accessTokenRejectedAsRefresh(t *testing.T) {
+	p := newJWT()
+	access, _ := p.GenerateToken("u1", "u@e.com", 1)
+	if _, _, err := p.ValidateRefreshToken(access); err == nil {
+		t.Fatalf("an access token must not validate as a refresh token")
+	}
+}
