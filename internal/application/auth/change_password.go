@@ -11,19 +11,22 @@ import (
 
 type ChangePasswordInput struct {
 	UserID          string `json:"-"`
-	CurrentPassword string `json:"current_password" binding:"required,min=5,max=20"`
-	NewPassword     string `json:"new_password" binding:"required,min=5,max=20"`
+	// CurrentPassword solo necesita estar presente: su validez se comprueba
+	// contra el hash almacenado, no por longitud (que además podría ser de una
+	// política anterior).
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required,min=8,max=72"`
 }
 
 func (c ChangePasswordInput) Validate() error {
 	if strings.TrimSpace(c.UserID) == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "Usuario inválido", 400)
 	}
-	if len(c.CurrentPassword) < 5 || len(c.CurrentPassword) > 20 {
-		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña actual debe tener entre 5 y 20 caracteres", 400)
+	if strings.TrimSpace(c.CurrentPassword) == "" {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña actual es obligatoria", 400)
 	}
-	if len(c.NewPassword) < 5 || len(c.NewPassword) > 20 {
-		return appErrors.NewAppError("VALIDATION_ERROR", "La nueva contraseña debe tener entre 5 y 20 caracteres", 400)
+	if len(c.NewPassword) < 8 || len(c.NewPassword) > 72 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La nueva contraseña debe tener entre 8 y 72 caracteres", 400)
 	}
 	return nil
 }

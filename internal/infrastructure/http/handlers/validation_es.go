@@ -33,7 +33,7 @@ func ValidationMessageES(err error) string {
 				return "El teléfono debe tener 10 dígitos"
 			}
 			if field == "code" || field == "código" {
-				return "El código debe tener 4 dígitos"
+				return "El código debe tener 6 dígitos"
 			}
 			return fmt.Sprintf("El campo %s debe tener %s caracteres", field, fe.Param())
 		case "numeric":

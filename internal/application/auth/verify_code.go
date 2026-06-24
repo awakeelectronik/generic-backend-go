@@ -11,15 +11,15 @@ import (
 
 type VerifyCodeInput struct {
 	UserID string `json:"user_id" binding:"required"`
-	Code   string `json:"code" binding:"required,len=4"`
+	Code   string `json:"code" binding:"required,len=6"`
 }
 
 func (v VerifyCodeInput) Validate() error {
 	if strings.TrimSpace(v.UserID) == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "user_id es obligatorio", 400)
 	}
-	if len(v.Code) != 4 {
-		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 4 caracteres", 400)
+	if len(v.Code) != 6 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 6 caracteres", 400)
 	}
 	return nil
 }

@@ -62,7 +62,7 @@ const (
 	sendHistoryWindow       = 1 * time.Hour
 )
 
-// SendVerificationCode generates a 4-digit code and delivers it to the
+// SendVerificationCode generates a 6-digit code and delivers it to the
 // destination. If destination looks like an email, it sends an HTML email
 // via the injected EmailSender. Phone destinations are logged only (SMS
 // not yet implemented).
@@ -88,12 +88,12 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 	vs.cleanupExpiredCodesLocked()
 	vs.recordSendLocked(userID)
 
-	max := big.NewInt(10000)
+	max := big.NewInt(1000000)
 	n, err := rand.Int(rand.Reader, max)
 	if err != nil {
-		n = big.NewInt(time.Now().UnixNano() % 10000)
+		n = big.NewInt(time.Now().UnixNano() % 1000000)
 	}
-	code := fmt.Sprintf("%04d", n.Int64())
+	code := fmt.Sprintf("%06d", n.Int64())
 
 	// Nuevo envío invalida el código anterior (mismo almacén por userID).
 	vs.codes[userID] = &VerificationCode{

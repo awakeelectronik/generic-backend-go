@@ -12,19 +12,19 @@ import (
 type ResetPasswordInput struct {
 	Email       string `json:"email" binding:"omitempty,email"`
 	Phone       string `json:"phone" binding:"omitempty,len=10,numeric"`
-	Code        string `json:"code" binding:"required,len=4"`
-	NewPassword string `json:"new_password" binding:"required,min=5,max=20"`
+	Code        string `json:"code" binding:"required,len=6"`
+	NewPassword string `json:"new_password" binding:"required,min=8,max=72"`
 }
 
 func (r ResetPasswordInput) Validate() error {
 	if strings.TrimSpace(r.Email) == "" && strings.TrimSpace(r.Phone) == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
 	}
-	if len(r.Code) != 4 {
-		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 4 caracteres", 400)
+	if len(r.Code) != 6 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 6 caracteres", 400)
 	}
-	if len(r.NewPassword) < 5 || len(r.NewPassword) > 20 {
-		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña debe tener entre 5 y 20 caracteres", 400)
+	if len(r.NewPassword) < 8 || len(r.NewPassword) > 72 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña debe tener entre 8 y 72 caracteres", 400)
 	}
 	return nil
 }

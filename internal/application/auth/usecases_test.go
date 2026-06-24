@@ -105,6 +105,38 @@ func TestLogin_userNotFound(t *testing.T) {
 	}
 }
 
+// countingHasher records how many times Compare runs so the timing test can
+// assert bcrypt work happens even when no user matches.
+type countingHasher struct{ compares int }
+
+func (h *countingHasher) Hash(p string) (string, error) { return "hash:" + p, nil }
+func (h *countingHasher) Compare(hash, password string) error {
+	h.compares++
+	if hash == "hash:"+password {
+		return nil
+	}
+	return errors.New("password mismatch")
+}
+
+// TestLogin_userNotFoundStillComparesPassword is the anti-enumeration timing
+// regression: even when the user does not exist, the use case must still run a
+// password Compare (against the dummy hash) so the response time can't reveal
+// whether the account exists.
+func TestLogin_userNotFoundStillComparesPassword(t *testing.T) {
+	h := &countingHasher{}
+	uc := NewLoginUseCase(&fakeUserRepo{}, h, &fakeTokenProvider{}, silentLogger())
+	// Reset: the constructor calls Hash, not Compare, so the counter starts at 0.
+	h.compares = 0
+
+	_, err := uc.Execute(context.Background(), LoginInput{Email: "nope@b.com", Password: "pw"})
+	if !errors.Is(err, appErrors.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+	if h.compares != 1 {
+		t.Fatalf("expected exactly one dummy Compare on user-miss, got %d", h.compares)
+	}
+}
+
 func TestLogin_unverifiedUserForbidden(t *testing.T) {
 	repo := &fakeUserRepo{byEmail: map[string]*domain.User{
 		"a@b.com": {ID: "u1", Email: "a@b.com", Password: "hash:pw", Verified: false, TokenVersion: 1},

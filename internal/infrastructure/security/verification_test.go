@@ -38,6 +38,28 @@ func TestVerificationService_emailDestinationCallsSender(t *testing.T) {
 	}
 }
 
+// TestVerificationService_codeIsSixDigits guards the 4->6 digit widening: a
+// 4-digit code has only 10k combinations and is brute-forceable within the
+// attempt window; 6 digits raises that to 1M.
+func TestVerificationService_codeIsSixDigits(t *testing.T) {
+	svc := NewVerificationService(&recordingSender{}, "TestApp", "#000000", newSilentLogger())
+	if err := svc.SendVerificationCode("user-6digit", "u@example.com"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	code, ok := svc.GetDebugCode("user-6digit")
+	if !ok {
+		t.Fatal("expected a stored code")
+	}
+	if len(code) != 6 {
+		t.Fatalf("expected a 6-digit code, got %q (len %d)", code, len(code))
+	}
+	for _, r := range code {
+		if r < '0' || r > '9' {
+			t.Fatalf("expected only digits, got %q", code)
+		}
+	}
+}
+
 func TestVerificationService_phoneDestinationDoesNotCallSender(t *testing.T) {
 	sender := &recordingSender{}
 	svc := NewVerificationService(sender, "TestApp", "#000000", newSilentLogger())

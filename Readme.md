@@ -177,7 +177,7 @@ revocando todos los tokens emitidos antes.
 
 ### Verificación de contacto
 
-`VerificationService` genera un código de 4 dígitos con `crypto/rand`,
+`VerificationService` genera un código de 6 dígitos con `crypto/rand`,
 lo entrega a email y/o teléfono (mismo código a ambos si el usuario tiene los
 dos), aplica rate limit (5/h con 8s mínimo entre envíos) y cae a logging del
 código en consola para SMS no implementado. La plantilla HTML usa
