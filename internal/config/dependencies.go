@@ -7,8 +7,10 @@ import (
 	authUC "github.com/awakeelectronik/generic-backend-go/internal/application/auth"
 	docUC "github.com/awakeelectronik/generic-backend-go/internal/application/document"
 	userUC "github.com/awakeelectronik/generic-backend-go/internal/application/user"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/cache"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/email"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http/handlers"
+	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/http/middleware"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/mysql"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/persistence/storage"
 	"github.com/awakeelectronik/generic-backend-go/internal/infrastructure/security"
@@ -113,8 +115,30 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		cfg.JWT.RefreshHours,
 		cfg.JWT.IssuerName,
 	)
-	verificationService := security.NewVerificationService(emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger)
 	adminChecker := security.NewAdminChecker(cfg.Admin.Email, cfg.Admin.Phone)
+
+	// ========== SHARED STORE: opt-in Redis ==========
+	// Sin REDIS_URL, el rate-limiter y los códigos de verificación viven en
+	// memoria del proceso: válido para una sola instancia, pero se pierden al
+	// reiniciar y no se comparten entre réplicas. Con Redis, ambos pasan a un
+	// store compartido y restart-safe (necesario al escalar horizontalmente).
+	var verificationService application.VerificationService
+	if cfg.Redis.URL != "" {
+		redisClient, err := cache.NewClient(cfg.Redis.URL)
+		if err != nil {
+			logger.WithError(err).Fatal("Failed to connect to Redis")
+			return nil, err
+		}
+		logger.Info("✅ Redis connected: rate limiting and verification codes are shared and restart-safe")
+		verificationService = security.NewVerificationServiceWithStore(
+			security.NewRedisVerificationStore(redisClient, security.DefaultVerificationPolicy()),
+			emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger,
+		)
+		middleware.SetRateStore(middleware.NewRedisRateStore(redisClient, logger))
+	} else {
+		logger.Warn("REDIS_URL not set: rate limiting and verification codes are in-memory (single-instance, lost on restart)")
+		verificationService = security.NewVerificationService(emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger)
+	}
 
 	// ========== USE CASES ==========
 	registerUC := authUC.NewRegisterUseCase(userRepo, referralCodeRepo, userReferralRepo, txRunner, passwordHasher, verificationService, cfg.Auth.RequireReferral, logger)

@@ -19,6 +19,16 @@ type Config struct {
 	Brand    BrandConfig
 	Admin    AdminConfig
 	Auth     AuthConfig
+	Redis    RedisConfig
+}
+
+// RedisConfig habilita los backends distribuidos opt-in. Si URL está vacía, el
+// rate-limiter y los códigos de verificación usan el store in-memory (válido
+// para una sola instancia; se pierde al reiniciar). Con una URL (redis:// o
+// rediss://) ambos pasan a un store compartido y restart-safe, necesario al
+// escalar horizontalmente.
+type RedisConfig struct {
+	URL string
 }
 
 // AuthConfig toggles auth-flow behaviors that vary across deployments.
@@ -154,6 +164,9 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			RequireReferral: getEnvBool("REQUIRE_REFERRAL", false),
+		},
+		Redis: RedisConfig{
+			URL: getEnv("REDIS_URL", ""),
 		},
 	}
 

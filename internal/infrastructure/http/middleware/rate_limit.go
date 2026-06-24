@@ -1,12 +1,52 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// RateStore decides whether a request keyed by `key` is allowed under
+// (rate, window). The default backend is in-memory (process-local); a
+// Redis-backed store can be installed via SetRateStore so the limit is shared
+// across instances and survives restarts.
+type RateStore interface {
+	Allow(ctx context.Context, key string, rate int, window time.Duration) bool
+}
+
+// memoryRateStore is the in-process backend. It reuses one rateLimiter per
+// (rate, window) so the historical behavior (and its tests) are unchanged.
+type memoryRateStore struct{}
+
+func (memoryRateStore) Allow(_ context.Context, key string, rate int, window time.Duration) bool {
+	return getOrCreateLimiter(rate, window).allow(key)
+}
+
+var (
+	rateStoreMu     sync.RWMutex
+	activeRateStore RateStore = memoryRateStore{}
+)
+
+// SetRateStore swaps the backend used by RateLimitMiddleware. Called at startup
+// when Redis is configured; ignored if nil so a misconfiguration can't silently
+// disable rate limiting.
+func SetRateStore(s RateStore) {
+	if s == nil {
+		return
+	}
+	rateStoreMu.Lock()
+	defer rateStoreMu.Unlock()
+	activeRateStore = s
+}
+
+func currentRateStore() RateStore {
+	rateStoreMu.RLock()
+	defer rateStoreMu.RUnlock()
+	return activeRateStore
+}
 
 type rateLimiter struct {
 	visitors map[string]*visitor
@@ -120,15 +160,14 @@ func getOrCreateLimiter(rate int, window time.Duration) *rateLimiter {
 	return rl
 }
 
-// RateLimitMiddleware creates a middleware for rate limiting.
-// Reutiliza un limiter por (rate, window) para evitar una goroutine por ruta.
+// RateLimitMiddleware creates a middleware for rate limiting. It delegates to
+// the active RateStore (in-memory by default, Redis when configured) keyed by
+// client IP, so swapping the backend needs no route changes.
 func RateLimitMiddleware(rate int, window time.Duration) gin.HandlerFunc {
-	limiter := getOrCreateLimiter(rate, window)
-
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 
-		if !limiter.allow(ip) {
+		if !currentRateStore().Allow(c.Request.Context(), ip, rate, window) {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"success": false,
 				"code":    "RATE_LIMIT_EXCEEDED",

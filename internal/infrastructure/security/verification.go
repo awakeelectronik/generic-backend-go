@@ -1,16 +1,15 @@
 package security
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
-	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,30 +22,44 @@ type VerificationCode struct {
 	Attempts  int
 }
 
-// VerificationService implements application.VerificationService.
-// NOTE: codes are stored in-memory. For multi-instance or restart-safe
-// deployments, replace the map with Redis or a DB-backed store.
+// VerificationService implements application.VerificationService. It owns the
+// code generation, channel fan-out and HTML email rendering; the persistence of
+// codes and send-throttle state lives behind a VerificationStore so the backend
+// (in-memory vs Redis) is swappable. The default store is in-memory; pass a
+// Redis-backed store via NewVerificationServiceWithStore for multi-instance /
+// restart-safe deployments.
 type VerificationService struct {
-	mu          sync.Mutex
-	codes       map[string]*VerificationCode
-	sendHistory map[string][]time.Time // per user: timestamps of code sends (rate limiting)
+	store       VerificationStore
 	emailSender application.EmailSender
 	appName     string
 	brandHex    string
 	logger      *logrus.Logger
 }
 
-// NewVerificationService creates a new VerificationService.
-// appName and brandHex parameterize the HTML email so each deployment of this
-// template renders with its own identity.
+// NewVerificationService creates a service backed by the in-memory store
+// (process-local, lost on restart). Signature kept for backward compatibility.
 func NewVerificationService(
 	emailSender application.EmailSender,
 	appName, brandHex string,
 	logger *logrus.Logger,
 ) *VerificationService {
+	return NewVerificationServiceWithStore(
+		newMemoryVerificationStore(DefaultVerificationPolicy()),
+		emailSender, appName, brandHex, logger,
+	)
+}
+
+// NewVerificationServiceWithStore wires the service to an explicit store
+// (e.g. a Redis-backed one) so codes survive restarts and are shared across
+// instances.
+func NewVerificationServiceWithStore(
+	store VerificationStore,
+	emailSender application.EmailSender,
+	appName, brandHex string,
+	logger *logrus.Logger,
+) *VerificationService {
 	return &VerificationService{
-		codes:       make(map[string]*VerificationCode),
-		sendHistory: make(map[string][]time.Time),
+		store:       store,
 		emailSender: emailSender,
 		appName:     appName,
 		brandHex:    brandHex,
@@ -78,29 +91,19 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 		return fmt.Errorf("no hay destinos para el código de verificación")
 	}
 
-	vs.mu.Lock()
-	defer vs.mu.Unlock()
+	ctx := context.Background()
 
-	if err := vs.assertSendAllowedLocked(userID); err != nil {
+	// La verificación del throttle de envío y el registro del intento son
+	// atómicos dentro del store; si está limitado, no generamos código.
+	if err := vs.store.RegisterSend(ctx, userID); err != nil {
 		return err
 	}
 
-	vs.cleanupExpiredCodesLocked()
-	vs.recordSendLocked(userID)
+	code := generateNumericCode()
 
-	max := big.NewInt(1000000)
-	n, err := rand.Int(rand.Reader, max)
-	if err != nil {
-		n = big.NewInt(time.Now().UnixNano() % 1000000)
-	}
-	code := fmt.Sprintf("%06d", n.Int64())
-
-	// Nuevo envío invalida el código anterior (mismo almacén por userID).
-	vs.codes[userID] = &VerificationCode{
-		UserID:    userID,
-		Code:      code,
-		ExpiresAt: time.Now().Add(verificationCodeTTL),
-		Used:      false,
+	if err := vs.store.SaveCode(ctx, userID, code); err != nil {
+		vs.logger.WithError(err).WithField("user_id", userID).Error("Failed to store verification code")
+		return err
 	}
 
 	// Consola en desarrollo: el código queda guardado aunque falle el envío.
@@ -139,6 +142,18 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 	return nil
 }
 
+// generateNumericCode returns a cryptographically-random 6-digit code (with a
+// time-based fallback if the RNG ever fails). 6 digits = 1M combinations, which
+// the per-code attempt limit makes infeasible to brute-force.
+func generateNumericCode() string {
+	max := big.NewInt(1000000)
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		n = big.NewInt(time.Now().UnixNano() % 1000000)
+	}
+	return fmt.Sprintf("%06d", n.Int64())
+}
+
 func dedupeDestinations(destinations []string) []string {
 	seen := make(map[string]struct{})
 	var out []string
@@ -156,101 +171,28 @@ func dedupeDestinations(destinations []string) []string {
 	return out
 }
 
-func (vs *VerificationService) assertSendAllowedLocked(userID string) error {
-	now := time.Now()
-	history := vs.sendHistory[userID]
-	var recent []time.Time
-	for _, t := range history {
-		if now.Sub(t) <= sendHistoryWindow {
-			recent = append(recent, t)
-		}
-	}
-	vs.sendHistory[userID] = recent
-
-	if len(recent) >= maxSendsPerHourPerUser {
-		return fmt.Errorf("%w", appErrors.ErrVerificationRateLimited)
-	}
-	if len(recent) > 0 {
-		last := recent[len(recent)-1]
-		if now.Sub(last) < minResendInterval {
-			return fmt.Errorf("%w", appErrors.ErrVerificationRateLimited)
-		}
-	}
-	return nil
-}
-
-func (vs *VerificationService) recordSendLocked(userID string) {
-	now := time.Now()
-	vs.sendHistory[userID] = append(vs.sendHistory[userID], now)
-}
-
 // VerifyCode checks that the provided code is valid, not expired, and unused.
 func (vs *VerificationService) VerifyCode(userID, code string) error {
-	vs.mu.Lock()
-	defer vs.mu.Unlock()
-
-	stored, exists := vs.codes[userID]
-	if !exists {
-		return appErrors.ErrVerificationCodeNotFound
+	if err := vs.store.VerifyCode(context.Background(), userID, code); err != nil {
+		return err
 	}
-	if stored.Used {
-		return appErrors.ErrVerificationCodeUsed
-	}
-	if time.Now().After(stored.ExpiresAt) {
-		return appErrors.ErrVerificationCodeExpired
-	}
-	if stored.Attempts >= maxVerificationAttempts {
-		// Cierre defensivo: una vez agotados los intentos, el código queda
-		// inutilizable aun si el siguiente envío llega correcto. Forzar
-		// reenvío evita brute-force con el código vigente.
-		stored.Used = true
-		return appErrors.ErrVerificationCodeAttemptsExceeded
-	}
-	if stored.Code != code {
-		stored.Attempts++
-		if stored.Attempts >= maxVerificationAttempts {
-			stored.Used = true
-		}
-		return appErrors.ErrVerificationCodeInvalid
-	}
-
-	stored.Used = true
 	vs.logger.WithField("user_id", userID).Info("Verification code confirmed")
 	return nil
 }
 
-// CleanupExpiredCodes removes expired codes from the in-memory store.
+// CleanupExpiredCodes removes expired codes from the store.
 func (vs *VerificationService) CleanupExpiredCodes() {
-	vs.mu.Lock()
-	defer vs.mu.Unlock()
-	vs.cleanupExpiredCodesLocked()
-}
-
-func (vs *VerificationService) cleanupExpiredCodesLocked() {
-	now := time.Now()
-	for userID, code := range vs.codes {
-		if now.After(code.ExpiresAt) {
-			delete(vs.codes, userID)
-		}
-	}
+	vs.store.CleanupExpired(context.Background())
 }
 
 // ResetRateLimitsForUser clears send throttling for a user (integration tests).
 func (vs *VerificationService) ResetRateLimitsForUser(userID string) {
-	vs.mu.Lock()
-	defer vs.mu.Unlock()
-	delete(vs.sendHistory, userID)
+	vs.store.ResetSends(context.Background(), userID)
 }
 
 // GetDebugCode returns the current code for a user. Intended for tests only.
 func (vs *VerificationService) GetDebugCode(userID string) (string, bool) {
-	vs.mu.Lock()
-	defer vs.mu.Unlock()
-	stored, ok := vs.codes[userID]
-	if !ok || stored == nil {
-		return "", false
-	}
-	return stored.Code, true
+	return vs.store.PeekCode(context.Background(), userID)
 }
 
 func isEmail(destination string) bool {

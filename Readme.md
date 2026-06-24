@@ -42,6 +42,7 @@ make run
 | `JWT_REFRESH` | `8760` (horas, 1 año) | refresh rota en cada uso |
 | `STORAGE_PATH` | `./uploads` | |
 | `MAX_FILE_SIZE` | `5242880` (5 MiB) | |
+| `REDIS_URL` | `` (vacío) | `redis://...` activa store **compartido y restart-safe** para rate-limit y códigos de verificación (necesario al correr varias instancias). Vacío = store **in-memory**: válido para una sola instancia, se pierde al reiniciar y no se comparte entre réplicas. |
 
 ### Branding (parametriza cada clonación)
 
@@ -182,6 +183,21 @@ lo entrega a email y/o teléfono (mismo código a ambos si el usuario tiene los
 dos), aplica rate limit (5/h con 8s mínimo entre envíos) y cae a logging del
 código en consola para SMS no implementado. La plantilla HTML usa
 `APP_NAME` y `APP_BRAND_COLOR`.
+
+### Store compartido (Redis opt-in)
+
+Tanto el rate-limiter HTTP como los códigos de verificación se respaldan en un
+`Store` con dos implementaciones (patrón estrategia):
+
+- **In-memory** (por defecto): estado en el proceso. Simple y sin infra, pero se
+  pierde al reiniciar y **no** se comparte entre instancias.
+- **Redis** (si `REDIS_URL` está seteada): contadores y códigos viven en Redis
+  con operaciones atómicas (scripts Lua), por lo que el límite es consistente y
+  un código emitido por una réplica se verifica en otra. El rate-limiter es
+  *fail-open* si Redis cae (sirve la petición y registra un warning, en vez de
+  tumbar el endpoint).
+
+La selección se hace una sola vez en `BuildDependencies` según `REDIS_URL`.
 
 ## Desarrollo
 
