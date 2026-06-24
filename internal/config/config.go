@@ -160,9 +160,19 @@ func Load() (*Config, error) {
 	if cfg.JWT.Secret == "" {
 		return nil, fmt.Errorf("JWT_SECRET not configured")
 	}
+	// HMAC-SHA256 (los tokens van firmados con HS256) deriva su seguridad de la
+	// entropía del secreto: un secreto corto es brute-forceable y permite forjar
+	// tokens válidos. Exigimos al menos 32 bytes, el tamaño del bloque de salida
+	// de SHA-256. Se valida en el arranque para fallar rápido, no en runtime.
+	if len(cfg.JWT.Secret) < minJWTSecretBytes {
+		return nil, fmt.Errorf("JWT_SECRET too weak: need at least %d bytes, got %d", minJWTSecretBytes, len(cfg.JWT.Secret))
+	}
 
 	return cfg, nil
 }
+
+// minJWTSecretBytes es la longitud mínima exigida al secreto HMAC.
+const minJWTSecretBytes = 32
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

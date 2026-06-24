@@ -37,7 +37,7 @@ make run
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | — | |
 | `DB_MAX_CONN` | `25` | |
 | `DB_IDLE_CONN` | `5` | |
-| `JWT_SECRET` | — (obligatorio) | |
+| `JWT_SECRET` | — (obligatorio) | mín. 32 bytes; el arranque falla si es más corto |
 | `JWT_EXPIRATION` | `24` (horas) | access token |
 | `JWT_REFRESH` | `8760` (horas, 1 año) | refresh rota en cada uso |
 | `STORAGE_PATH` | `./uploads` | |
