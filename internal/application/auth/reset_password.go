@@ -23,6 +23,8 @@ func (r ResetPasswordInput) Validate() error {
 	if len(r.Code) != 6 {
 		return appErrors.NewAppError("VALIDATION_ERROR", "El código debe tener 6 caracteres", 400)
 	}
+	// len() cuenta bytes (no runas): es el límite real de bcrypt (72 bytes),
+	// más estricto que el binding `max=72` que cuenta runas.
 	if len(r.NewPassword) < 8 || len(r.NewPassword) > 72 {
 		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña debe tener entre 8 y 72 caracteres", 400)
 	}

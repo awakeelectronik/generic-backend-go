@@ -93,13 +93,19 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 
 	ctx := context.Background()
 
+	// Generamos el código ANTES de consumir el slot de throttle: si el CSPRNG
+	// fallara, abortamos sin gastar un envío del usuario.
+	code, err := generateNumericCode()
+	if err != nil {
+		vs.logger.WithError(err).WithField("user_id", userID).Error("CSPRNG failed generating verification code")
+		return fmt.Errorf("no se pudo generar el código de verificación: %w", err)
+	}
+
 	// La verificación del throttle de envío y el registro del intento son
-	// atómicos dentro del store; si está limitado, no generamos código.
+	// atómicos dentro del store; si está limitado, no se entrega el código.
 	if err := vs.store.RegisterSend(ctx, userID); err != nil {
 		return err
 	}
-
-	code := generateNumericCode()
 
 	if err := vs.store.SaveCode(ctx, userID, code); err != nil {
 		vs.logger.WithError(err).WithField("user_id", userID).Error("Failed to store verification code")
@@ -142,16 +148,16 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 	return nil
 }
 
-// generateNumericCode returns a cryptographically-random 6-digit code (with a
-// time-based fallback if the RNG ever fails). 6 digits = 1M combinations, which
-// the per-code attempt limit makes infeasible to brute-force.
-func generateNumericCode() string {
-	max := big.NewInt(1000000)
-	n, err := rand.Int(rand.Reader, max)
+// generateNumericCode returns a cryptographically-random 6-digit code (1M
+// combinations, which the per-code attempt limit makes infeasible to
+// brute-force). A CSPRNG failure returns an error so the caller fails the send
+// instead of emitting a predictable (e.g. time-derived) code.
+func generateNumericCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
 	if err != nil {
-		n = big.NewInt(time.Now().UnixNano() % 1000000)
+		return "", err
 	}
-	return fmt.Sprintf("%06d", n.Int64())
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
 func dedupeDestinations(destinations []string) []string {

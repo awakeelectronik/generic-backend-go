@@ -38,13 +38,19 @@ return 1
 
 func (s *redisRateStore) Allow(ctx context.Context, key string, rate int, window time.Duration) bool {
 	// La ventana va en la clave: distintas rutas (distinto rate/window) no
-	// comparten contador aunque sea la misma IP.
-	redisKey := fmt.Sprintf("rl:%d:%d:%s", rate, int(window.Seconds()), key)
+	// comparten contador aunque sea la misma IP. Se usa la ventana en
+	// milisegundos (no segundos truncados) para que dos ventanas sub-segundo
+	// distintas no colapsen a la misma clave.
+	redisKey := fmt.Sprintf("rl:%d:%d:%s", rate, window.Milliseconds(), key)
 
 	res, err := rateScript.Run(ctx, s.client, []string{redisKey}, window.Milliseconds(), rate).Int()
 	if err != nil {
-		// Fail-open: si Redis no responde preferimos servir la petición (perder
-		// el límite) antes que tumbar el endpoint. Se registra para alertar.
+		// Fail-OPEN deliberado: el rate-limit es una protección, no el control de
+		// acceso; ante un fallo de Redis preferimos servir la petición (perdiendo
+		// el límite) antes que devolver 429 a TODO el tráfico. Es la decisión
+		// opuesta al store de verificación, que falla CERRADO (500): un código
+		// que no se puede registrar/verificar de forma fiable NO debe emitirse ni
+		// aceptarse. Asimetría intencional: disponibilidad aquí, integridad allá.
 		s.logger.WithError(err).Warn("rate limiter: Redis unavailable, allowing request (fail-open)")
 		return true
 	}

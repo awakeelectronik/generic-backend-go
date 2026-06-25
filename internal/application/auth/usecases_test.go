@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
@@ -11,6 +12,22 @@ import (
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
+
+// TestRegisterInput_passwordByteLength guards the bcrypt 72-BYTE bound: the
+// binding tag's max=72 counts runes, so a multibyte password can pass it yet
+// exceed 72 bytes and be silently truncated by bcrypt. Validate must reject it.
+func TestRegisterInput_passwordByteLength(t *testing.T) {
+	// 25 euro signs = 25 runes but 75 bytes.
+	if err := (&RegisterInput{Email: "a@b.com", Password: strings.Repeat("€", 25)}).Validate(); err == nil {
+		t.Fatalf("expected a >72-byte password to be rejected")
+	}
+	if err := (&RegisterInput{Email: "a@b.com", Password: "password123"}).Validate(); err != nil {
+		t.Fatalf("expected a valid password to pass, got %v", err)
+	}
+	if err := (&RegisterInput{Email: "a@b.com", Password: "short"}).Validate(); err == nil {
+		t.Fatalf("expected a <8-byte password to be rejected")
+	}
+}
 
 func silentLogger() *logrus.Logger {
 	l := logrus.New()

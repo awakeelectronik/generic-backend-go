@@ -112,8 +112,10 @@ func (s *redisVerificationStore) SaveCode(ctx context.Context, userID, code stri
 	// distinguir "expirado" de "inexistente" durante una ventana de gracia.
 	keyTTL := s.policy.CodeTTL * 2
 
+	// HSET reescribe los cuatro campos (incl. attempts/used reseteados), así que
+	// sustituye al código anterior sin un DEL previo. TxPipeline (MULTI/EXEC)
+	// aplica HSET+EXPIRE de forma atómica.
 	pipe := s.client.TxPipeline()
-	pipe.Del(ctx, key)
 	pipe.HSet(ctx, key, map[string]interface{}{
 		"code":     code,
 		"attempts": 0,
@@ -122,6 +124,9 @@ func (s *redisVerificationStore) SaveCode(ctx context.Context, userID, code stri
 	})
 	pipe.Expire(ctx, key, keyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
+		// Fail-CERRADO: si no podemos persistir el código de forma fiable, el
+		// envío falla (500) en vez de mandar por correo un código que luego no
+		// existiría en el store. Ver la asimetría documentada en el rate-limiter.
 		return appErrors.NewAppErrorWithInternal("STORAGE_ERROR", "Error guardando código", 500, err)
 	}
 	return nil

@@ -57,6 +57,26 @@ func TestRedisRateStore_separatesByKeyAndWindow(t *testing.T) {
 	}
 }
 
+// TestRedisRateStore_subSecondWindowsDoNotCollide guards the millisecond-keyed
+// fix: two distinct sub-second windows for the same IP previously truncated to
+// `0` seconds in the key and shared one counter.
+func TestRedisRateStore_subSecondWindowsDoNotCollide(t *testing.T) {
+	store, _ := newTestRedisRateStore(t)
+	ctx := context.Background()
+
+	// Exhaust the 200ms window (limit 1).
+	if !store.Allow(ctx, "7.7.7.7", 1, 200*time.Millisecond) {
+		t.Fatalf("first 200ms request should pass")
+	}
+	if store.Allow(ctx, "7.7.7.7", 1, 200*time.Millisecond) {
+		t.Fatalf("second 200ms request should be blocked")
+	}
+	// The 500ms window is a separate bucket and must still allow its first hit.
+	if !store.Allow(ctx, "7.7.7.7", 1, 500*time.Millisecond) {
+		t.Fatalf("a distinct sub-second window must not share the counter")
+	}
+}
+
 func TestRedisRateStore_resetsAfterWindow(t *testing.T) {
 	store, mr := newTestRedisRateStore(t)
 	ctx := context.Background()

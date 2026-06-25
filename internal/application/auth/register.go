@@ -21,11 +21,19 @@ type RegisterInput struct {
 }
 
 // Validate enforces inter-field rules that binding tags can't express
-// (at least one of email/phone must be present). Per-field shape rules
-// (lengths, formats) live in the binding tags above to avoid duplication.
+// (at least one of email/phone must be present) plus the password byte bound.
+// Per-field shape rules (formats) live in the binding tags above.
+//
+// El binding `max=72` cuenta RUNAS, pero bcrypt trunca a 72 BYTES: una
+// contraseña de runas multibyte podría pasar el binding y aun así exceder los
+// 72 bytes (perdiendo el final de forma silenciosa). Por eso aquí se valida con
+// len() —que en Go cuenta bytes— el mismo límite efectivo de bcrypt.
 func (r *RegisterInput) Validate() error {
 	if r.Email == "" && r.Phone == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "Debes proporcionar correo electrónico o teléfono", 400)
+	}
+	if n := len(r.Password); n < 8 || n > 72 {
+		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña debe tener entre 8 y 72 caracteres", 400)
 	}
 	return nil
 }

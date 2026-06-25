@@ -10,7 +10,7 @@ import (
 )
 
 type ChangePasswordInput struct {
-	UserID          string `json:"-"`
+	UserID string `json:"-"`
 	// CurrentPassword solo necesita estar presente: su validez se comprueba
 	// contra el hash almacenado, no por longitud (que además podría ser de una
 	// política anterior).
@@ -25,6 +25,8 @@ func (c ChangePasswordInput) Validate() error {
 	if strings.TrimSpace(c.CurrentPassword) == "" {
 		return appErrors.NewAppError("VALIDATION_ERROR", "La contraseña actual es obligatoria", 400)
 	}
+	// len() cuenta bytes (no runas): es el límite real de bcrypt (72 bytes),
+	// más estricto que el binding `max=72` que cuenta runas.
 	if len(c.NewPassword) < 8 || len(c.NewPassword) > 72 {
 		return appErrors.NewAppError("VALIDATION_ERROR", "La nueva contraseña debe tener entre 8 y 72 caracteres", 400)
 	}
