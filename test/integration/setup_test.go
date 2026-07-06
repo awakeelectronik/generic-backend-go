@@ -147,7 +147,9 @@ func SetupTestServer(t *testing.T, testDB *TestDB) *TestServer {
 			Port:     getenvDefault("TEST_DB_PORT", "3306"),
 			User:     getenvDefault("TEST_DB_USER", "root"),
 			Password: getenvDefault("TEST_DB_PASS", "password"),
-			Name:     getenvDefault("TEST_DB_NAME", "sumabitcointest"),
+			// Debe coincidir con el default de SetupTestDB: si difieren, la app
+			// conecta a una BD que nunca se creó.
+			Name:     getenvDefault("TEST_DB_NAME", "genericbackendtest"),
 		},
 		JWT: config.JWTConfig{
 			Secret:          getenvDefault("TEST_JWT_SECRET", "test-secret"),

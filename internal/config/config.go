@@ -36,6 +36,10 @@ type AuthConfig struct {
 	// RequireReferral makes the referral_code field mandatory in /auth/register.
 	// false → optional (validated only if provided).
 	RequireReferral bool
+	// BcryptCost es el work factor de bcrypt (env BCRYPT_COST). Default 12:
+	// más caro que el histórico 10 (recomendable para fintech); cada +1 duplica
+	// el tiempo de hash/compare, así que también encarece el login.
+	BcryptCost int
 }
 
 // AdminConfig holds the credentials of the single admin user. If any of these
@@ -82,6 +86,13 @@ type ServerConfig struct {
 	// confiar en cualquier proxy permite spoofear la IP cliente (evade el
 	// rate-limit por IP).
 	TrustedProxies []string
+	// MaxBodyBytes acota el body de las rutas JSON (env MAX_BODY_SIZE, bytes).
+	// Sin este tope, un body arbitrariamente grande se decodifica en memoria
+	// (DoS). La ruta de upload queda exenta: tiene su propio límite.
+	MaxBodyBytes int64
+	// HSTSEnabled emite Strict-Transport-Security (env HSTS_ENABLED). Activarlo
+	// solo cuando la app se sirve por HTTPS (directo o detrás del proxy TLS).
+	HSTSEnabled bool
 }
 
 type DatabaseConfig struct {
@@ -120,6 +131,8 @@ func Load() (*Config, error) {
 			AllowedOrigins: getEnvCSV("CORS_ALLOWED_ORIGINS", []string{"*"}),
 			// Default nil = no se confía en ningún proxy (IP = socket directo).
 			TrustedProxies: getEnvCSV("TRUSTED_PROXIES", nil),
+			MaxBodyBytes:   int64(getEnvInt("MAX_BODY_SIZE", 1<<20)),
+			HSTSEnabled:    getEnvBool("HSTS_ENABLED", false),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -164,6 +177,7 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			RequireReferral: getEnvBool("REQUIRE_REFERRAL", false),
+			BcryptCost:      getEnvInt("BCRYPT_COST", 12),
 		},
 		Redis: RedisConfig{
 			URL: getEnv("REDIS_URL", ""),
@@ -179,6 +193,15 @@ func Load() (*Config, error) {
 	// de SHA-256. Se valida en el arranque para fallar rápido, no en runtime.
 	if len(cfg.JWT.Secret) < minJWTSecretBytes {
 		return nil, fmt.Errorf("JWT_SECRET too weak: need at least %d bytes, got %d", minJWTSecretBytes, len(cfg.JWT.Secret))
+	}
+
+	// Cotas de sanidad: <10 es débil frente a cracking offline del dump de BD;
+	// >15 vuelve el login inutilizable (~segundos por compare) y facilita DoS.
+	if cfg.Auth.BcryptCost < 10 || cfg.Auth.BcryptCost > 15 {
+		return nil, fmt.Errorf("BCRYPT_COST out of range: need 10..15, got %d", cfg.Auth.BcryptCost)
+	}
+	if cfg.Server.MaxBodyBytes < 1024 {
+		return nil, fmt.Errorf("MAX_BODY_SIZE too small: need at least 1024 bytes, got %d", cfg.Server.MaxBodyBytes)
 	}
 
 	return cfg, nil

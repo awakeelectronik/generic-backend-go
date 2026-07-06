@@ -72,7 +72,11 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 
 		documents := protected.Group("/documents")
 		{
-			documents.POST("/upload", deps.DocumentHandler.Upload)
+			// Upload escribe a disco: limitarlo evita que una sola cuenta/IP
+			// llene el volumen a ráfagas (el resto de rutas GET son baratas).
+			documents.POST("/upload",
+				middleware.RateLimitMiddleware(20, time.Minute),
+				deps.DocumentHandler.Upload)
 			documents.GET("", deps.DocumentHandler.List)
 			documents.GET("/:id/download", deps.DocumentHandler.Download)
 		}

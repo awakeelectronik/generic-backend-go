@@ -34,6 +34,9 @@ make run
 | `BASE_URL` | `http://localhost:8080` | |
 | `CORS_ALLOWED_ORIGINS` | `*` | Orígenes permitidos, separados por coma. `*` = cualquiera **sin** credenciales (la combinación `*`+credentials es inválida); orígenes concretos se reflejan **con** `Allow-Credentials` + `Vary: Origin`. |
 | `TRUSTED_PROXIES` | `` (vacío) | IPs/CIDR de proxies inversos de confianza, separados por coma. Solo se honra `X-Forwarded-For` proveniente de ellos. Vacío = se ignora XFF y se usa la IP del socket directo. Configurar **solo** detrás de proxy/LB: confiar en cualquier proxy deja spoofear la IP cliente y evadir el rate-limit. |
+| `MAX_BODY_SIZE` | `1048576` (1 MiB) | Tope global del body para rutas JSON (mín. 1024). `/documents/upload` queda exenta: usa `MAX_FILE_SIZE` + holgura multipart. |
+| `HSTS_ENABLED` | `false` | `true` emite `Strict-Transport-Security` (1 año, includeSubDomains). Activar solo cuando la app se sirve por HTTPS. |
+| `BCRYPT_COST` | `12` | Work factor de bcrypt (rango válido 10–15). Cada +1 duplica el costo de hash/compare (afecta latencia de login y registro). |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | — | |
 | `DB_MAX_CONN` | `25` | |
 | `DB_IDLE_CONN` | `5` | |

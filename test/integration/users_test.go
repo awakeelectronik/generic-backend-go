@@ -152,8 +152,10 @@ func TestUpdateUserProfile(t *testing.T) {
 			name:   "Update own profile",
 			userID: userID,
 			payload: map[string]string{
-				"name":  "New Name",
-				"phone": "+573009876543",
+				"name": "New Name",
+				// El formato de teléfono del template es 10 dígitos sin prefijo
+				// internacional (binding len=10,numeric), igual que en register.
+				"phone": "3009876543",
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -161,7 +163,7 @@ func TestUpdateUserProfile(t *testing.T) {
 			name:   "Update with missing required field",
 			userID: userID,
 			payload: map[string]string{
-				"phone": "+573009876543",
+				"phone": "3009876543",
 			},
 			expectedStatus: http.StatusBadRequest,
 		},

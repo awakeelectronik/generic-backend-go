@@ -95,7 +95,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 	}
 
 	uc.logger.WithFields(logrus.Fields{
-		"email":  input.Email,
+		"email":  maskEmail(input.Email),
 		"action": "register",
 	}).Info("User registration attempt")
 

@@ -53,6 +53,31 @@ func userDestinations(u *domain.User) []string {
 	return dests
 }
 
+// maskEmail reduce un correo a primera letra + dominio para logs. Los logs se
+// replican a sistemas con menos control de acceso que la BD; el contacto
+// completo de un usuario no debe viajar ahí (PII).
+func maskEmail(email string) string {
+	if email == "" {
+		return ""
+	}
+	at := strings.Index(email, "@")
+	if at <= 0 {
+		return "***"
+	}
+	return email[:1] + "***" + email[at:]
+}
+
+// maskPhone deja visibles solo los últimos 4 dígitos.
+func maskPhone(phone string) string {
+	if phone == "" {
+		return ""
+	}
+	if len(phone) <= 4 {
+		return "****"
+	}
+	return strings.Repeat("*", len(phone)-4) + phone[len(phone)-4:]
+}
+
 // SessionOutput is the authenticated-session payload returned by every flow that
 // logs a user in: login, verify-code, and password change/reset. They all return
 // the same shape, so they share one type instead of four identical structs.

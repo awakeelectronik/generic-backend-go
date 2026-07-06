@@ -12,6 +12,16 @@ func NewPasswordHasher() *PasswordHasher {
 	}
 }
 
+// NewPasswordHasherWithCost permite fijar el work factor (BCRYPT_COST). Un cost
+// fuera del rango válido de bcrypt cae al DefaultCost en vez de fallar en cada
+// Hash: GenerateFromPassword trataría el valor inválido de forma silenciosa.
+func NewPasswordHasherWithCost(cost int) *PasswordHasher {
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		cost = bcrypt.DefaultCost
+	}
+	return &PasswordHasher{cost: cost}
+}
+
 func (ph *PasswordHasher) Hash(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), ph.cost)
 	return string(hash), err

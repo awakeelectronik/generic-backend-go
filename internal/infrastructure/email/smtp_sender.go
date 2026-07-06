@@ -33,6 +33,14 @@ func NewSMTPSender(from, fromName, host, port string) *SMTPSender {
 
 // Send envía un correo HTML al destinatario.
 func (s *SMTPSender) Send(to, subject, body string) error {
+	// Defensa contra header injection: `to` se interpola crudo en el header
+	// "To:"; un CR/LF embebido permitiría inyectar headers extra (Bcc a un
+	// atacante, otro cuerpo). Hoy los destinos vienen validados de la BD, pero
+	// este sender es genérico y no debe confiar en sus llamadores.
+	if strings.ContainsAny(to, "\r\n\x00") || !strings.Contains(to, "@") {
+		return fmt.Errorf("invalid recipient address")
+	}
+
 	now := time.Now().UTC()
 	messageID := fmt.Sprintf("<%d.%s@%s>", now.UnixNano(), strings.ReplaceAll(to, "@", "_"), messageIDHostFromFrom(s.from))
 	encodedSubject := mime.QEncoding.Encode("utf-8", subject)

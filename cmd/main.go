@@ -44,7 +44,11 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	router := gin.Default()
+	// gin.New + Recovery explícito: Recovery convierte panics en 500 (sin él un
+	// panic tumba la conexión); se omite el logger de Gin porque ya existe el
+	// LoggingMiddleware estructurado (evita log doble por petición).
+	router := gin.New()
+	router.Use(gin.Recovery())
 
 	// Trusted proxies: por defecto Gin confía en TODOS los proxies, lo que deja
 	// que un cliente falsifique X-Forwarded-For y evada el rate-limit por IP.
@@ -55,7 +59,11 @@ func main() {
 	}
 
 	// Middleware
+	router.Use(middleware.SecurityHeadersMiddleware(cfg.Server.HSTSEnabled))
 	router.Use(middleware.CORSMiddleware(cfg.Server.AllowedOrigins))
+	// Tope global de body para rutas JSON; /documents/upload queda exenta porque
+	// impone su propio límite (tamaño máx de archivo + sobre multipart).
+	router.Use(middleware.BodySizeLimitMiddleware(cfg.Server.MaxBodyBytes, "/api/v1/documents/upload"))
 	router.Use(middleware.LoggingMiddleware(logger))
 	router.Use(middleware.ErrorHandlingMiddleware())
 

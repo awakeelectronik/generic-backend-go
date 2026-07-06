@@ -34,6 +34,16 @@ type VerificationService struct {
 	appName     string
 	brandHex    string
 	logger      *logrus.Logger
+	// devLogCodes habilita volcar el código generado a consola/logs. SOLO para
+	// desarrollo: en producción un código en los logs equivale a la contraseña
+	// (forgot-password + código = toma de cuenta para quien lea los logs).
+	devLogCodes bool
+}
+
+// EnableDevCodeLogging activa el volcado de códigos a consola/logs. Llamar solo
+// cuando el entorno NO es producción.
+func (vs *VerificationService) EnableDevCodeLogging() {
+	vs.devLogCodes = true
 }
 
 // NewVerificationService creates a service backed by the in-memory store
@@ -112,8 +122,11 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 		return err
 	}
 
-	// Consola en desarrollo: el código queda guardado aunque falle el envío.
-	fmt.Printf("[verificación DEV] user_id=%s destinos=%v código=%s\n", userID, dests, code)
+	// Consola SOLO en desarrollo: el código queda guardado aunque falle el envío.
+	// En producción nunca se emite a stdout/logs (equivale a filtrar la credencial).
+	if vs.devLogCodes {
+		fmt.Printf("[verificación DEV] user_id=%s destinos=%v código=%s\n", userID, dests, code)
+	}
 
 	var sendErrs []error
 	for _, destination := range dests {
@@ -134,12 +147,16 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 			}).Info("Verification email sent")
 			continue
 		}
-		// SMS / WhatsApp not yet implemented
-		vs.logger.WithFields(logrus.Fields{
+		// SMS / WhatsApp not yet implemented. El código solo se incluye en el log
+		// en desarrollo; en producción se registra el hecho sin el secreto.
+		fields := logrus.Fields{
 			"user_id":     userID,
 			"destination": destination,
-			"code":        code,
-		}).Warn("SMS not implemented — verification code logged (development only)")
+		}
+		if vs.devLogCodes {
+			fields["code"] = code
+		}
+		vs.logger.WithFields(fields).Warn("SMS not implemented — verification code NOT delivered to phone")
 	}
 
 	if len(sendErrs) > 0 {

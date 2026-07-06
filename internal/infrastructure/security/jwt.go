@@ -87,6 +87,18 @@ func (p *JWTProvider) GenerateRefreshToken(userID string, tokenVersion int) (str
 	return token.SignedString([]byte(p.config.Secret))
 }
 
+// parserOptions endurece la validación en el parseo:
+//   - WithValidMethods fija HS256 exacto (el keyfunc además re-verifica la
+//     familia HMAC): imposible colar "none" o un downgrade de algoritmo.
+//   - WithIssuer rechaza tokens firmados por OTRO despliegue de este mismo
+//     template si alguien reutiliza el secreto entre apps clonadas.
+func (p *JWTProvider) parserOptions() []jwt.ParserOption {
+	return []jwt.ParserOption{
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(p.config.IssuerName),
+	}
+}
+
 func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email string, tokenVersion int, err error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -94,7 +106,7 @@ func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email st
 			return nil, fmt.Errorf("invalid signing method")
 		}
 		return []byte(p.config.Secret), nil
-	})
+	}, p.parserOptions()...)
 
 	if err != nil || !token.Valid {
 		return "", "", 0, fmt.Errorf("invalid token")
@@ -113,7 +125,7 @@ func (p *JWTProvider) ValidateRefreshToken(tokenString string) (userID string, t
 			return nil, fmt.Errorf("invalid signing method")
 		}
 		return []byte(p.config.Secret), nil
-	})
+	}, p.parserOptions()...)
 
 	if err != nil || !token.Valid {
 		return "", 0, fmt.Errorf("invalid refresh token")

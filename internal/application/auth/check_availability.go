@@ -47,8 +47,8 @@ func (uc *CheckAvailabilityUseCase) Execute(ctx context.Context, input CheckAvai
 	}
 
 	uc.logger.WithFields(logrus.Fields{
-		"email":  input.Email,
-		"phone":  input.Phone,
+		"email":  maskEmail(input.Email),
+		"phone":  maskPhone(input.Phone),
 		"action": "check_availability",
 	}).Info("Checking email/phone availability")
 
@@ -78,8 +78,8 @@ func (uc *CheckAvailabilityUseCase) Execute(ctx context.Context, input CheckAvai
 	}
 
 	uc.logger.WithFields(logrus.Fields{
-		"email":     input.Email,
-		"phone":     input.Phone,
+		"email":     maskEmail(input.Email),
+		"phone":     maskPhone(input.Phone),
 		"type":      checkType,
 		"available": available,
 	}).Info("Availability checked")

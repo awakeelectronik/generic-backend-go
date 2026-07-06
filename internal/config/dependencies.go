@@ -1,8 +1,6 @@
 package config
 
 import (
-	"time"
-
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	authUC "github.com/awakeelectronik/generic-backend-go/internal/application/auth"
 	docUC "github.com/awakeelectronik/generic-backend-go/internal/application/document"
@@ -51,6 +49,8 @@ type Dependencies struct {
 func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error) {
 	// ========== DATABASE CONNECTION ==========
 	// Crea la conexión BD con parámetros sueltos
+	// MaxLife ya es time.Duration: multiplicarlo otra vez por time.Second lo
+	// desbordaba (int64) y dejaba conexiones prácticamente sin rotación.
 	db, err := mysql.NewConnection(
 		cfg.Database.User,
 		cfg.Database.Password,
@@ -59,7 +59,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		cfg.Database.Name,
 		cfg.Database.MaxConn,
 		cfg.Database.IdleConn,
-		time.Duration(cfg.Database.MaxLife)*time.Second, // Convierte a time.Duration
+		cfg.Database.MaxLife,
 	)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to connect to database")
@@ -108,7 +108,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	}
 
 	// ========== SECURITY ==========
-	passwordHasher := security.NewPasswordHasher()
+	passwordHasher := security.NewPasswordHasherWithCost(cfg.Auth.BcryptCost)
 	tokenProvider := security.NewJWTProvider(
 		cfg.JWT.Secret,
 		cfg.JWT.ExpirationHours,
@@ -122,7 +122,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	// memoria del proceso: válido para una sola instancia, pero se pierden al
 	// reiniciar y no se comparten entre réplicas. Con Redis, ambos pasan a un
 	// store compartido y restart-safe (necesario al escalar horizontalmente).
-	var verificationService application.VerificationService
+	var verificationService *security.VerificationService
 	if cfg.Redis.URL != "" {
 		redisClient, err := cache.NewClient(cfg.Redis.URL)
 		if err != nil {
@@ -138,6 +138,11 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	} else {
 		logger.Warn("REDIS_URL not set: rate limiting and verification codes are in-memory (single-instance, lost on restart)")
 		verificationService = security.NewVerificationService(emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger)
+	}
+	// Volcado de códigos a consola/logs SOLO fuera de producción: en producción
+	// un código en los logs equivale a la contraseña del usuario.
+	if cfg.Server.Environment != "production" {
+		verificationService.EnableDevCodeLogging()
 	}
 
 	// ========== USE CASES ==========

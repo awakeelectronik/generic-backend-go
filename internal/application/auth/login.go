@@ -68,7 +68,7 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*Session
 		return nil, err
 	}
 
-	uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Info("Login attempt")
+	uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Info("Login attempt")
 
 	// Find user by email or phone (email preferred).
 	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
@@ -76,19 +76,19 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*Session
 		// Comparamos contra el hash dummy aunque no haya usuario: igualamos el
 		// coste bcrypt para no filtrar por timing si la cuenta existe o no.
 		_ = uc.passwordHasher.Compare(uc.dummyHash, input.Password)
-		uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Warn("Login failed: user not found")
+		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: user not found")
 		return nil, appErrors.ErrUnauthorized
 	}
 
 	// Verify password
 	if err := uc.passwordHasher.Compare(user.Password, input.Password); err != nil {
-		uc.logger.WithFields(logrus.Fields{"email": input.Email, "phone": input.Phone}).Warn("Login failed: invalid password")
+		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: invalid password")
 		return nil, appErrors.ErrUnauthorized
 	}
 
 	// Check if user is verified
 	if !user.Verified {
-		uc.logger.WithFields(logrus.Fields{"user_id": user.ID, "email": input.Email, "phone": input.Phone}).Warn("Login failed: user not verified")
+		uc.logger.WithFields(logrus.Fields{"user_id": user.ID, "email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: user not verified")
 		return nil, appErrors.NewAppErrorWithData(
 			"UNVERIFIED_USER",
 			"Usuario no verificado. Verifica tu correo o teléfono primero.",

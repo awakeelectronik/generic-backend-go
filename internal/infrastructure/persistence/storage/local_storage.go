@@ -18,7 +18,10 @@ type LocalStorage struct {
 }
 
 func NewLocalStorage(basePath, baseURL string) *LocalStorage {
-	os.MkdirAll(basePath, 0755)
+	// 0700: los documentos subidos pueden ser sensibles (KYC, identidad) y solo
+	// el proceso de la app debe leerlos; las descargas siempre pasan por la API
+	// (que valida dueño), nunca las sirve otro proceso directamente del disco.
+	os.MkdirAll(basePath, 0o700)
 	return &LocalStorage{
 		basePath: basePath,
 		baseURL:  baseURL,
@@ -58,7 +61,7 @@ func (ls *LocalStorage) Save(
 	// relativeStoredPath de abajo: Get() une la ruta guardada sobre basePath, así
 	// que si escribimos en otra carpeta la descarga falla con NotFound.
 	userDir := filepath.Join(ls.basePath, "documents", "uploads", userID)
-	if err := os.MkdirAll(userDir, 0755); err != nil {
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
 		return "", "", appErrors.NewAppErrorWithInternal(
 			"STORAGE_ERROR",
 			"Error creating user directory",
@@ -70,8 +73,9 @@ func (ls *LocalStorage) Save(
 	// Path completo en disco: {basePath}/documents/uploads/{userID}/{UUID}.{ext}
 	fullPath := filepath.Join(userDir, uniqueName)
 
-	// Crear el archivo en disco
-	outFile, err := os.Create(fullPath)
+	// Crear el archivo en disco con permisos 0600 (os.Create daría 0644: legible
+	// por cualquier usuario local del host).
+	outFile, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", "", appErrors.NewAppErrorWithInternal(
 			"STORAGE_ERROR",

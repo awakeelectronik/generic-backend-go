@@ -66,7 +66,12 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		return nil, err
 	}
 	if user == nil {
-		return nil, appErrors.NewNotFoundError("Usuario")
+		// Anti-enumeración: un 404 aquí revelaría qué correos/teléfonos tienen
+		// cuenta, contradiciendo el mensaje genérico de forgot-password. Se
+		// responde exactamente igual que una cuenta real SIN código pendiente
+		// (el estado en que está cualquier cuenta que no pidió reset), así ambos
+		// casos son indistinguibles para quien sondea.
+		return nil, appErrors.ErrVerificationCodeNotFound
 	}
 
 	if err := uc.verificationSvc.VerifyCode(user.ID, input.Code); err != nil {

@@ -295,7 +295,12 @@ func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int,
 	args := []any{}
 	whereFiltered := "WHERE deleted_at IS NULL"
 	if q != "" {
-		like := "%" + q + "%"
+		// Escapar comodines LIKE: sin esto, un q con % o _ se interpreta como
+		// patrón (q="%" listaría todo y patrones pesados degradan la consulta).
+		// La parametrización ya evita inyección SQL; esto evita inyección de
+		// comodines.
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
+		like := "%" + escaped + "%"
 		whereFiltered += " AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)"
 		args = append(args, like, like, like)
 	}
@@ -345,12 +350,13 @@ func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int,
 
 	// Totals are computed without the q filter and without LIMIT/OFFSET so the
 	// summary reflects the global state, not the page.
+	// COALESCE: con la tabla vacía SUM devuelve NULL y el Scan a int fallaría.
 	var total, active, inactive int
 	if err := dbFrom(ctx, r.db).QueryRowContext(ctx, `
 		SELECT
 			COUNT(*),
-			SUM(CASE WHEN verified = TRUE THEN 1 ELSE 0 END),
-			SUM(CASE WHEN verified = FALSE THEN 1 ELSE 0 END)
+			COALESCE(SUM(CASE WHEN verified = TRUE THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN verified = FALSE THEN 1 ELSE 0 END), 0)
 		FROM users WHERE deleted_at IS NULL`).Scan(&total, &active, &inactive); err != nil {
 		return nil, 0, 0, 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error computing user summary", 500, err)
 	}
