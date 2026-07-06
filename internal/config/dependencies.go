@@ -37,10 +37,14 @@ type Dependencies struct {
 	// Persistence helpers
 	TxRunner application.TransactionRunner
 
+	// Audit
+	AuditLogger application.AuditLogger
+
 	// Handlers
 	AuthHandler     *handlers.AuthHandler
 	UserHandler     *handlers.UserHandler
 	DocumentHandler *handlers.DocumentHandler
+	AuditHandler    *handlers.AuditHandler
 
 	// Logger
 	Logger *logrus.Logger
@@ -57,6 +61,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		cfg.Database.Host,
 		cfg.Database.Port,
 		cfg.Database.Name,
+		cfg.Database.TLSMode,
 		cfg.Database.MaxConn,
 		cfg.Database.IdleConn,
 		cfg.Database.MaxLife,
@@ -97,7 +102,18 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	txRunner := mysql.NewTransactionRunner(db)
 
 	// ========== STORAGE ==========
-	fileStorage := storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Server.BaseURL)
+	var fileStorage application.FileStorage = storage.NewLocalStorage(cfg.Storage.LocalPath, cfg.Server.BaseURL)
+	// Cifrado at-rest opt-in: con STORAGE_ENC_KEY los archivos se guardan
+	// sellados con AES-256-GCM; los previos (sin cifrar) se siguen sirviendo.
+	if len(cfg.Storage.EncKey) > 0 {
+		encStorage, err := storage.NewEncryptedStorage(fileStorage, cfg.Storage.EncKey)
+		if err != nil {
+			logger.WithError(err).Fatal("Failed to initialize storage encryption")
+			return nil, err
+		}
+		fileStorage = encStorage
+		logger.Info("✅ Storage encryption at rest enabled (AES-256-GCM)")
+	}
 
 	// ========== EMAIL ==========
 	var emailSender application.EmailSender
@@ -109,8 +125,9 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 
 	// ========== SECURITY ==========
 	passwordHasher := security.NewPasswordHasherWithCost(cfg.Auth.BcryptCost)
-	tokenProvider := security.NewJWTProvider(
+	tokenProvider := security.NewJWTProviderWithPrevious(
 		cfg.JWT.Secret,
+		cfg.JWT.PreviousSecret,
 		cfg.JWT.ExpirationHours,
 		cfg.JWT.RefreshHours,
 		cfg.JWT.IssuerName,
@@ -123,6 +140,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	// reiniciar y no se comparten entre réplicas. Con Redis, ambos pasan a un
 	// store compartido y restart-safe (necesario al escalar horizontalmente).
 	var verificationService *security.VerificationService
+	var loginThrottle application.LoginThrottle
 	if cfg.Redis.URL != "" {
 		redisClient, err := cache.NewClient(cfg.Redis.URL)
 		if err != nil {
@@ -134,10 +152,12 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 			security.NewRedisVerificationStore(redisClient, security.DefaultVerificationPolicy()),
 			emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger,
 		)
-		middleware.SetRateStore(middleware.NewRedisRateStore(redisClient, logger))
+		middleware.SetRateStore(middleware.NewRedisRateStore(redisClient, cfg.Server.RateLimitFailClosed, logger))
+		loginThrottle = security.NewRedisLoginThrottle(redisClient, security.DefaultLoginThrottlePolicy(), logger)
 	} else {
 		logger.Warn("REDIS_URL not set: rate limiting and verification codes are in-memory (single-instance, lost on restart)")
 		verificationService = security.NewVerificationService(emailSender, cfg.Brand.AppName, cfg.Brand.BrandHex, logger)
+		loginThrottle = security.NewMemoryLoginThrottle(security.DefaultLoginThrottlePolicy())
 	}
 	// Volcado de códigos a consola/logs SOLO fuera de producción: en producción
 	// un código en los logs equivale a la contraseña del usuario.
@@ -145,10 +165,14 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		verificationService.EnableDevCodeLogging()
 	}
 
+	// ========== AUDIT ==========
+	auditLogger := mysql.NewAuditRepository(db)
+
 	// ========== USE CASES ==========
 	registerUC := authUC.NewRegisterUseCase(userRepo, referralCodeRepo, userReferralRepo, txRunner, passwordHasher, verificationService, cfg.Auth.RequireReferral, logger)
 	checkReferralUC := authUC.NewCheckReferralUseCase(userRepo, referralCodeRepo, userReferralRepo, logger)
-	loginUC := authUC.NewLoginUseCase(userRepo, passwordHasher, tokenProvider, logger)
+	loginUC := authUC.NewLoginUseCase(userRepo, passwordHasher, tokenProvider, loginThrottle, logger)
+	logoutUC := authUC.NewLogoutUseCase(userRepo, logger)
 	refreshUC := authUC.NewRefreshUseCase(userRepo, tokenProvider, logger)
 	checkAvailabilityUC := authUC.NewCheckAvailabilityUseCase(userRepo, logger)
 	verifyCodeUC := authUC.NewVerifyCodeUseCase(userRepo, tokenProvider, verificationService, logger)
@@ -157,7 +181,7 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 	resetPasswordUC := authUC.NewResetPasswordUseCase(userRepo, passwordHasher, verificationService, tokenProvider, logger)
 	changePasswordUC := authUC.NewChangePasswordUseCase(userRepo, passwordHasher, tokenProvider, logger)
 
-	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, cfg.Storage.AllowedMimes, logger)
+	uploadDocUC := docUC.NewUploadDocumentUseCase(documentRepo, fileStorage, cfg.Storage.MaxFileSize, cfg.Storage.MaxDocsPerUser, cfg.Storage.AllowedMimes, logger)
 	listDocUC := docUC.NewListDocumentsUseCase(documentRepo, logger)
 	downloadDocUC := docUC.NewDownloadDocumentUseCase(documentRepo, fileStorage, logger)
 
@@ -178,8 +202,10 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		forgotPasswordUC,
 		resetPasswordUC,
 		changePasswordUC,
+		logoutUC,
 		logger,
 	)
+	auditHandler := handlers.NewAuditHandler(auditLogger, logger)
 	userHandler := handlers.NewUserHandler(listUsersUC, getUserUC, updateUserUC, deleteUserUC, logger)
 	// Holgura de 1 MiB sobre el tamaño máx de archivo para el sobre multipart
 	// (boundary, headers de parte, otros campos del form).
@@ -199,9 +225,11 @@ func BuildDependencies(cfg *Config, logger *logrus.Logger) (*Dependencies, error
 		AdminChecker:        adminChecker,
 		EmailSender:         emailSender,
 		TxRunner:            txRunner,
+		AuditLogger:         auditLogger,
 		AuthHandler:         authHandler,
 		UserHandler:         userHandler,
 		DocumentHandler:     documentHandler,
+		AuditHandler:        auditHandler,
 		Logger:              logger,
 	}, nil
 }

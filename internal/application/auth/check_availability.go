@@ -9,7 +9,7 @@ import (
 )
 
 type CheckAvailabilityInput struct {
-	Email string `json:"email" binding:"omitempty,email"`
+	Email string `json:"email" binding:"omitempty,email,max=254"`
 	Phone string `json:"phone" binding:"omitempty,len=10,numeric"`
 }
 
@@ -45,6 +45,8 @@ func (uc *CheckAvailabilityUseCase) Execute(ctx context.Context, input CheckAvai
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
+
+	input.Email = normalizeEmail(input.Email)
 
 	uc.logger.WithFields(logrus.Fields{
 		"email":  maskEmail(input.Email),

@@ -64,8 +64,26 @@ func main() {
 	// Tope global de body para rutas JSON; /documents/upload queda exenta porque
 	// impone su propio límite (tamaño máx de archivo + sobre multipart).
 	router.Use(middleware.BodySizeLimitMiddleware(cfg.Server.MaxBodyBytes, "/api/v1/documents/upload"))
+	// Techo global por IP, colchón sobre los límites por ruta: acota el gasto
+	// total (CPU/BD/logs) que una sola IP puede imponer, incluida la búsqueda
+	// de rutas inexistentes.
+	router.Use(middleware.RateLimitMiddleware(300, time.Minute))
 	router.Use(middleware.LoggingMiddleware(logger))
 	router.Use(middleware.ErrorHandlingMiddleware())
+
+	// Avisos de configuración insegura en producción (no se aborta: puede ser
+	// legítimo en una app interna, pero debe quedar constancia explícita).
+	if cfg.Server.Environment == "production" {
+		if len(cfg.Server.AllowedOrigins) == 1 && cfg.Server.AllowedOrigins[0] == "*" {
+			logger.Warn("⚠️  production con CORS_ALLOWED_ORIGINS=*: lista orígenes concretos si la API se consume desde navegador")
+		}
+		if cfg.Email.Noop {
+			logger.Warn("⚠️  production con EMAIL_NOOP=true: los códigos de verificación no se entregan por ningún canal")
+		}
+		if !cfg.Server.HSTSEnabled && cfg.Server.TLSCertFile != "" {
+			logger.Warn("⚠️  TLS nativo activo sin HSTS_ENABLED: considera activarlo")
+		}
+	}
 
 	// Routes
 	apphttp.SetupRoutes(router, deps, logger)
@@ -80,12 +98,24 @@ func main() {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// Techo explícito de headers (el default de Go ya es 1 MiB; fijarlo
+		// deja la decisión documentada y estable ante cambios de default).
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	// Arrancamos en goroutine para poder escuchar señales de apagado.
+	// Con TLS_CERT_FILE/TLS_KEY_FILE se sirve HTTPS nativo; sin ellos, HTTP
+	// plano (se asume TLS terminado en el proxy inverso).
 	go func() {
-		logger.Infof("🚀 Server starting on http://localhost:%s", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if cfg.Server.TLSCertFile != "" {
+			logger.Infof("🚀 Server starting on https://localhost:%s (native TLS)", cfg.Server.Port)
+			err = srv.ListenAndServeTLS(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile)
+		} else {
+			logger.Infof("🚀 Server starting on http://localhost:%s", cfg.Server.Port)
+			err = srv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatalf("Error starting server: %v", err)
 		}
 	}()

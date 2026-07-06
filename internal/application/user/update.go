@@ -12,7 +12,7 @@ import (
 // UpdateUserInput holds the mutable fields of a user profile.
 // Phone uses the same shape as registration (10 digits) so both flows agree.
 type UpdateUserInput struct {
-	Name  string `json:"name"  binding:"required,min=2"`
+	Name  string `json:"name"  binding:"required,min=2,max=100"`
 	Phone string `json:"phone" binding:"omitempty,len=10,numeric"`
 }
 

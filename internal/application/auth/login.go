@@ -9,9 +9,9 @@ import (
 )
 
 type LoginInput struct {
-	Email    string `json:"email" binding:"omitempty,email"`
+	Email    string `json:"email" binding:"omitempty,email,max=254"`
 	Phone    string `json:"phone" binding:"omitempty,len=10,numeric"`
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,max=72"`
 }
 
 // Validate only checks inter-field rules (at least one of email/phone).
@@ -33,7 +33,11 @@ type LoginUseCase struct {
 	userRepo       application.UserRepository
 	passwordHasher application.PasswordHasher
 	tokenProvider  application.TokenProvider
-	logger         *logrus.Logger
+	// throttle bloquea la CUENTA tras N contraseñas fallidas: el rate-limit por
+	// IP no frena un ataque distribuido (muchas IPs, una cuenta). nil = sin
+	// lockout (tests unitarios); en producción siempre se inyecta.
+	throttle application.LoginThrottle
+	logger   *logrus.Logger
 	// dummyHash se compara cuando el usuario no existe para que el coste bcrypt
 	// (y por tanto el tiempo de respuesta) sea indistinguible de un login con
 	// usuario real pero contraseña incorrecta. Sin esto, "usuario no existe"
@@ -45,6 +49,7 @@ func NewLoginUseCase(
 	userRepo application.UserRepository,
 	ph application.PasswordHasher,
 	tp application.TokenProvider,
+	throttle application.LoginThrottle,
 	logger *logrus.Logger,
 ) *LoginUseCase {
 	// Pre-calculamos un hash con el mismo hasher (mismo coste) que los reales,
@@ -58,6 +63,7 @@ func NewLoginUseCase(
 		userRepo:       userRepo,
 		passwordHasher: ph,
 		tokenProvider:  tp,
+		throttle:       throttle,
 		logger:         logger,
 		dummyHash:      dummy,
 	}
@@ -67,6 +73,8 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*Session
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
+
+	input.Email = normalizeEmail(input.Email)
 
 	uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Info("Login attempt")
 
@@ -80,10 +88,32 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*Session
 		return nil, appErrors.ErrUnauthorized
 	}
 
+	// Lockout por cuenta ANTES de gastar bcrypt: si está bloqueada, ni siquiera
+	// evaluamos la contraseña (un atacante bloqueado no obtiene señal de si
+	// acertó). El 429 es deliberadamente distinguible: el dueño legítimo debe
+	// saber que su cuenta está bajo ataque / bloqueada, no ver "credenciales
+	// inválidas" con la contraseña correcta.
+	if uc.throttle != nil && uc.throttle.IsLocked(ctx, user.ID) {
+		uc.logger.WithField("user_id", user.ID).Warn("Login blocked: account locked by failed attempts")
+		return nil, appErrors.NewAppError(
+			"LOGIN_LOCKED",
+			"Demasiados intentos fallidos. Intenta de nuevo en unos minutos.",
+			429,
+		)
+	}
+
 	// Verify password
 	if err := uc.passwordHasher.Compare(user.Password, input.Password); err != nil {
+		if uc.throttle != nil {
+			uc.throttle.RegisterFailure(ctx, user.ID)
+		}
 		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: invalid password")
 		return nil, appErrors.ErrUnauthorized
+	}
+
+	// Contraseña correcta: se limpia el contador de fallos de la cuenta.
+	if uc.throttle != nil {
+		uc.throttle.Reset(ctx, user.ID)
 	}
 
 	// Check if user is verified

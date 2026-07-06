@@ -12,6 +12,10 @@ import (
 func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.Logger) {
 	// Public routes
 	api := router.Group("/api/v1")
+
+	// Trail de auditoría para TODA mutación bajo /api/v1 (incluye intentos
+	// rechazados por auth/rate-limit: el status queda registrado).
+	api.Use(middleware.AuditMiddleware(deps.AuditLogger, logger))
 	{
 		auth := api.Group("/auth")
 		{
@@ -56,11 +60,17 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 	protectedAuth.Use(middleware.AuthMiddleware(deps.TokenProvider, deps.UserRepo))
 	{
 		protectedAuth.POST("/change-password", deps.AuthHandler.ChangePassword)
+		// Logout con revocación real: sube token_version, todos los tokens
+		// (access y refresh) emitidos hasta ahora quedan inválidos.
+		protectedAuth.POST("/logout", deps.AuthHandler.Logout)
 	}
 
 	// Protected routes
 	protected := api.Group("")
 	protected.Use(middleware.AuthMiddleware(deps.TokenProvider, deps.UserRepo))
+	// Límite por USUARIO además del límite por IP: acota una cuenta abusiva
+	// aunque rote IPs, y no castiga a cuentas legítimas detrás del mismo NAT.
+	protected.Use(middleware.RateLimitByUserMiddleware(240, time.Minute))
 	{
 		users := protected.Group("/users")
 		{
@@ -81,11 +91,12 @@ func SetupRoutes(router *gin.Engine, deps *config.Dependencies, logger *logrus.L
 			documents.GET("/:id/download", deps.DocumentHandler.Download)
 		}
 
-		// Admin routes — gated by AdminChecker (single admin by email+phone).
+		// Admin routes — gated by AdminChecker (role-based, legacy fallback).
 		admin := protected.Group("/admin")
 		admin.Use(middleware.AdminMiddleware(deps.AdminChecker))
 		{
 			admin.GET("/users", deps.UserHandler.List)
+			admin.GET("/audit-logs", deps.AuditHandler.List)
 		}
 	}
 

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 )
@@ -110,4 +111,35 @@ type TransactionRunner interface {
 // La implementación concreta (p. ej. por email+teléfono) vive en infraestructura.
 type AdminChecker interface {
 	IsAdmin(user *domain.User) bool
+}
+
+// LoginThrottle limita intentos fallidos de login POR CUENTA (no por IP: un
+// ataque distribuido desde muchas IPs contra una sola cuenta evade el
+// rate-limit por IP). La cuenta se bloquea temporalmente tras N fallos.
+type LoginThrottle interface {
+	// IsLocked indica si la cuenta está bloqueada por exceso de fallos.
+	IsLocked(ctx context.Context, accountID string) bool
+	// RegisterFailure registra un intento fallido de contraseña.
+	RegisterFailure(ctx context.Context, accountID string)
+	// Reset limpia el contador tras un login exitoso.
+	Reset(ctx context.Context, accountID string)
+}
+
+// AuditEntry es un evento del trail de auditoría (tabla audit_logs).
+type AuditEntry struct {
+	ID         string
+	UserID     string
+	Action     string
+	Resource   string
+	ResourceID string
+	// Changes lleva contexto adicional (status, ip, request_id, ...) como JSON.
+	Changes   map[string]any
+	CreatedAt time.Time
+}
+
+// AuditLogger persiste y consulta el trail de auditoría. Record NUNCA debe
+// tumbar la petición que audita: los errores se loguean y se sigue.
+type AuditLogger interface {
+	Record(ctx context.Context, entry *AuditEntry) error
+	List(ctx context.Context, limit, offset int) ([]*AuditEntry, int, error)
 }

@@ -29,6 +29,9 @@ func TestSecurityHeadersPresent(t *testing.T) {
 	assert.Equal(t, "default-src 'none'; frame-ancestors 'none'", w.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
 	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "geolocation=(), camera=(), microphone=()", w.Header().Get("Permissions-Policy"))
+	assert.Equal(t, "same-origin", w.Header().Get("Cross-Origin-Resource-Policy"))
+	assert.Equal(t, "none", w.Header().Get("X-Permitted-Cross-Domain-Policies"))
 	// HSTS apagado por defecto: solo aplica sobre HTTPS.
 	assert.Empty(t, w.Header().Get("Strict-Transport-Security"))
 }

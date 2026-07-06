@@ -14,13 +14,17 @@ import (
 // (atomic), so counts are consistent across instances.
 type redisRateStore struct {
 	client redis.UniversalClient
-	logger *logrus.Logger
+	// failClosed invierte la política ante un Redis caído: false = fail-open
+	// (se sirve la petición; disponibilidad), true = fail-closed (429 a todo;
+	// integridad — preferible en fintech donde el rate-limit protege dinero).
+	failClosed bool
+	logger     *logrus.Logger
 }
 
 // NewRedisRateStore builds a Redis-backed RateStore. Install it with
 // SetRateStore at startup.
-func NewRedisRateStore(client redis.UniversalClient, logger *logrus.Logger) RateStore {
-	return &redisRateStore{client: client, logger: logger}
+func NewRedisRateStore(client redis.UniversalClient, failClosed bool, logger *logrus.Logger) RateStore {
+	return &redisRateStore{client: client, failClosed: failClosed, logger: logger}
 }
 
 // rateScript increments the per-key counter and sets the window TTL on the first
@@ -45,12 +49,19 @@ func (s *redisRateStore) Allow(ctx context.Context, key string, rate int, window
 
 	res, err := rateScript.Run(ctx, s.client, []string{redisKey}, window.Milliseconds(), rate).Int()
 	if err != nil {
-		// Fail-OPEN deliberado: el rate-limit es una protección, no el control de
-		// acceso; ante un fallo de Redis preferimos servir la petición (perdiendo
-		// el límite) antes que devolver 429 a TODO el tráfico. Es la decisión
-		// opuesta al store de verificación, que falla CERRADO (500): un código
-		// que no se puede registrar/verificar de forma fiable NO debe emitirse ni
-		// aceptarse. Asimetría intencional: disponibilidad aquí, integridad allá.
+		// Política ante Redis caído, elegible por despliegue
+		// (RATE_LIMIT_FAIL_CLOSED):
+		//   - fail-OPEN (default): se sirve la petición perdiendo el límite;
+		//     el rate-limit es protección, no control de acceso.
+		//   - fail-CLOSED: 429 a todo; en fintech un límite evadido puede costar
+		//     dinero y se prefiere degradar disponibilidad.
+		// El store de verificación siempre falla CERRADO (500): un código que no
+		// se puede registrar/verificar de forma fiable NO debe emitirse ni
+		// aceptarse.
+		if s.failClosed {
+			s.logger.WithError(err).Warn("rate limiter: Redis unavailable, rejecting request (fail-closed)")
+			return false
+		}
 		s.logger.WithError(err).Warn("rate limiter: Redis unavailable, allowing request (fail-open)")
 		return true
 	}

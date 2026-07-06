@@ -29,6 +29,12 @@ func SeedAdminUser(db *sql.DB, email, phone, name, passwordHash string) (bool, e
 	`, email, phone).Scan(&existingID)
 
 	if err == nil {
+		// Backfill idempotente del rol: bases creadas antes de la columna `role`
+		// tienen al admin con role='user'; sin esto perdería acceso admin al
+		// pasar el AdminChecker a estar basado en rol.
+		if _, err := db.Exec(`UPDATE users SET role = 'admin' WHERE id = ? AND role <> 'admin'`, existingID); err != nil {
+			return false, fmt.Errorf("backfill admin role: %w", err)
+		}
 		return false, nil
 	}
 	if err != sql.ErrNoRows {
@@ -38,8 +44,8 @@ func SeedAdminUser(db *sql.DB, email, phone, name, passwordHash string) (bool, e
 	now := time.Now()
 	id := uuid.NewString()
 	_, err = db.Exec(`
-		INSERT INTO users (id, email, password, name, phone, verified, token_version, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, TRUE, 1, ?, ?)
+		INSERT INTO users (id, email, password, name, phone, role, verified, token_version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'admin', TRUE, 1, ?, ?)
 	`, id, email, passwordHash, name, phone, now, now)
 	if err != nil {
 		return false, fmt.Errorf("insert admin user: %w", err)

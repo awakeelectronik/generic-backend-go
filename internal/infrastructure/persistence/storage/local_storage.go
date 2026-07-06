@@ -145,7 +145,22 @@ func (ls *LocalStorage) Get(ctx context.Context, filePath string) (io.ReadCloser
 		return nil, appErrors.NewNotFoundError("File")
 	}
 
-	file, err := os.Open(absFull)
+	// Segunda barrera: symlinks. El chequeo léxico de arriba no ve un symlink
+	// DENTRO de basePath apuntando fuera (p. ej. a /etc/passwd). Se resuelven
+	// los symlinks reales de ambos lados y se re-verifica la contención.
+	resolvedBase, err := filepath.EvalSymlinks(absBase)
+	if err != nil {
+		return nil, appErrors.NewAppErrorWithInternal("STORAGE_ERROR", "Error resolviendo storage base", 500, err)
+	}
+	resolvedFull, err := filepath.EvalSymlinks(absFull)
+	if err != nil {
+		return nil, appErrors.NewNotFoundError("File")
+	}
+	if resolvedFull != resolvedBase && !strings.HasPrefix(resolvedFull, resolvedBase+string(os.PathSeparator)) {
+		return nil, appErrors.NewNotFoundError("File")
+	}
+
+	file, err := os.Open(resolvedFull)
 	if err != nil {
 		return nil, appErrors.NewNotFoundError("File")
 	}

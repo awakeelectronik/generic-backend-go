@@ -10,7 +10,7 @@ import (
 )
 
 type ResetPasswordInput struct {
-	Email       string `json:"email" binding:"omitempty,email"`
+	Email       string `json:"email" binding:"omitempty,email,max=254"`
 	Phone       string `json:"phone" binding:"omitempty,len=10,numeric"`
 	Code        string `json:"code" binding:"required,len=6"`
 	NewPassword string `json:"new_password" binding:"required,min=8,max=72"`
@@ -60,7 +60,7 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		return nil, err
 	}
 
-	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
+	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, normalizeEmail(input.Email), input.Phone)
 	if err != nil {
 		uc.logger.WithError(err).Error("Failed to fetch user for password reset")
 		return nil, err

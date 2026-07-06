@@ -10,7 +10,12 @@ import (
 // JWTConfig se define AQUÍ (local), no importado desde config
 // Esto rompe el ciclo: security ya no importa el paquete config
 type JWTConfig struct {
-	Secret          string
+	Secret string
+	// PreviousSecret permite rotar JWT_SECRET sin invalidar de golpe todas las
+	// sesiones: los tokens NUEVOS se firman siempre con Secret, pero los ya
+	// emitidos con el secreto anterior siguen validando durante la ventana de
+	// rotación. Vacío = sin rotación en curso.
+	PreviousSecret  string
 	ExpirationHours int
 	RefreshHours    int
 	IssuerName      string
@@ -44,9 +49,16 @@ type RefreshClaims struct {
 }
 
 func NewJWTProvider(secret string, expirationHours, refreshHours int, issuerName string) *JWTProvider {
+	return NewJWTProviderWithPrevious(secret, "", expirationHours, refreshHours, issuerName)
+}
+
+// NewJWTProviderWithPrevious acepta además el secreto ANTERIOR (rotación en
+// curso). Ver JWTConfig.PreviousSecret.
+func NewJWTProviderWithPrevious(secret, previousSecret string, expirationHours, refreshHours int, issuerName string) *JWTProvider {
 	return &JWTProvider{
 		config: &JWTConfig{
 			Secret:          secret,
+			PreviousSecret:  previousSecret,
 			ExpirationHours: expirationHours,
 			RefreshHours:    refreshHours,
 			IssuerName:      issuerName,
@@ -99,19 +111,48 @@ func (p *JWTProvider) parserOptions() []jwt.ParserOption {
 	}
 }
 
-func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email string, tokenVersion int, err error) {
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("invalid signing method")
-		}
-		return []byte(p.config.Secret), nil
-	}, p.parserOptions()...)
+// validationSecrets devuelve los secretos aceptados para VALIDAR, en orden:
+// el vigente primero y, si hay rotación en curso, el anterior. Firmar siempre
+// usa solo el vigente.
+func (p *JWTProvider) validationSecrets() []string {
+	secrets := []string{p.config.Secret}
+	if p.config.PreviousSecret != "" {
+		secrets = append(secrets, p.config.PreviousSecret)
+	}
+	return secrets
+}
 
-	if err != nil || !token.Valid {
+// parseWithSecrets intenta validar el token contra cada secreto aceptado.
+// claimsFactory produce un struct de claims fresco por intento (reutilizarlo
+// entre parseos dejaría campos contaminados de un intento fallido).
+func (p *JWTProvider) parseWithSecrets(tokenString string, claimsFactory func() jwt.Claims) (jwt.Claims, error) {
+	var lastErr error
+	for _, secret := range p.validationSecrets() {
+		claims := claimsFactory()
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("invalid signing method")
+			}
+			return []byte(secret), nil
+		}, p.parserOptions()...)
+		if err == nil && token.Valid {
+			return claims, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("token not valid")
+	}
+	return nil, lastErr
+}
+
+func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email string, tokenVersion int, err error) {
+	parsed, err := p.parseWithSecrets(tokenString, func() jwt.Claims { return &Claims{} })
+	if err != nil {
 		return "", "", 0, fmt.Errorf("invalid token")
 	}
-	if claims.Type != tokenTypeAccess {
+	claims, ok := parsed.(*Claims)
+	if !ok || claims.Type != tokenTypeAccess {
 		return "", "", 0, fmt.Errorf("invalid token")
 	}
 
@@ -119,18 +160,12 @@ func (p *JWTProvider) ValidateToken(tokenString string) (userID string, email st
 }
 
 func (p *JWTProvider) ValidateRefreshToken(tokenString string) (userID string, tokenVersion int, err error) {
-	claims := &RefreshClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("invalid signing method")
-		}
-		return []byte(p.config.Secret), nil
-	}, p.parserOptions()...)
-
-	if err != nil || !token.Valid {
+	parsed, err := p.parseWithSecrets(tokenString, func() jwt.Claims { return &RefreshClaims{} })
+	if err != nil {
 		return "", 0, fmt.Errorf("invalid refresh token")
 	}
-	if claims.Type != tokenTypeRefresh {
+	claims, ok := parsed.(*RefreshClaims)
+	if !ok || claims.Type != tokenTypeRefresh {
 		return "", 0, fmt.Errorf("invalid refresh token")
 	}
 

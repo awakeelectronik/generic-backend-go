@@ -40,6 +40,7 @@ type AuthHandler struct {
 	forgotPasswordUC     *auth.ForgotPasswordUseCase
 	resetPasswordUC      *auth.ResetPasswordUseCase
 	changePasswordUC     *auth.ChangePasswordUseCase
+	logoutUC             *auth.LogoutUseCase
 	logger               *logrus.Logger
 }
 
@@ -54,6 +55,7 @@ func NewAuthHandler(
 	forgotPasswordUC *auth.ForgotPasswordUseCase,
 	resetPasswordUC *auth.ResetPasswordUseCase,
 	changePasswordUC *auth.ChangePasswordUseCase,
+	logoutUC *auth.LogoutUseCase,
 	logger *logrus.Logger,
 ) *AuthHandler {
 	return &AuthHandler{
@@ -67,8 +69,20 @@ func NewAuthHandler(
 		forgotPasswordUC:     forgotPasswordUC,
 		resetPasswordUC:      resetPasswordUC,
 		changePasswordUC:     changePasswordUC,
+		logoutUC:             logoutUC,
 		logger:               logger,
 	}
+}
+
+// Logout revoca del lado del servidor TODOS los tokens del usuario autenticado
+// (sube token_version). Ruta protegida: requiere un access token válido.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	output, err := h.logoutUC.Execute(c.Request.Context(), c.GetString("user_id"))
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+	SuccessResponse(c, http.StatusOK, output)
 }
 
 func (h *AuthHandler) CheckReferral(c *gin.Context) {

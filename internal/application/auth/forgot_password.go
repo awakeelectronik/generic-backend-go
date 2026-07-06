@@ -11,7 +11,7 @@ import (
 )
 
 type ForgotPasswordInput struct {
-	Email string `json:"email" binding:"omitempty,email"`
+	Email string `json:"email" binding:"omitempty,email,max=254"`
 	Phone string `json:"phone" binding:"omitempty,len=10,numeric"`
 }
 
@@ -54,7 +54,7 @@ func (uc *ForgotPasswordUseCase) Execute(ctx context.Context, input ForgotPasswo
 		return nil, err
 	}
 
-	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
+	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, normalizeEmail(input.Email), input.Phone)
 	if err != nil {
 		uc.logger.WithError(err).Warn("forgot password: user lookup failed")
 		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
@@ -71,13 +71,21 @@ func (uc *ForgotPasswordUseCase) Execute(ctx context.Context, input ForgotPasswo
 		return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 	}
 
-	if err := uc.verificationSvc.SendVerificationCodeToDestinations(user.ID, destinations); err != nil {
-		// Rate-limit interno se silencia con el mismo mensaje genérico para
-		// preservar la no-enumeración. Cualquier otro fallo se loguea.
-		if !errors.Is(err, appErrors.ErrVerificationRateLimited) {
-			uc.logger.WithError(err).WithField("user_id", user.ID).Warn("forgot password: send failed")
+	// Envío ASÍNCRONO: cuando la cuenta existe, la entrega (exec de sendmail,
+	// ~decenas de ms) ocurría dentro de la petición, mientras que una cuenta
+	// inexistente respondía al instante — un oráculo de timing que permitía
+	// enumerar cuentas pese al mensaje genérico. Al despachar en goroutine,
+	// ambos caminos responden en tiempo indistinguible. El rate-limit interno
+	// y el guardado del código ocurren dentro del servicio igual que antes.
+	go func() {
+		if err := uc.verificationSvc.SendVerificationCodeToDestinations(user.ID, destinations); err != nil {
+			// Rate-limit interno se silencia con el mismo mensaje genérico para
+			// preservar la no-enumeración. Cualquier otro fallo se loguea.
+			if !errors.Is(err, appErrors.ErrVerificationRateLimited) {
+				uc.logger.WithError(err).WithField("user_id", user.ID).Warn("forgot password: send failed")
+			}
 		}
-	}
+	}()
 
 	return &ForgotPasswordOutput{Message: genericResponseMessage}, nil
 }

@@ -12,10 +12,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Los max acotan lo que entra a la BD: sin ellos, un name de 1 MiB (dentro del
+// body cap) revienta contra el VARCHAR con un 500 en vez de un 400 claro.
 type RegisterInput struct {
-	Email        string `json:"email" binding:"omitempty,email"`
+	Email        string `json:"email" binding:"omitempty,email,max=254"`
 	Password     string `json:"password" binding:"required,min=8,max=72"`
-	Name         string `json:"name" binding:"required,min=2"`
+	Name         string `json:"name" binding:"required,min=2,max=100"`
 	Phone        string `json:"phone" binding:"omitempty,len=10,numeric"`
 	ReferralCode string `json:"referral_code" binding:"omitempty,len=6,alphanum"`
 }
@@ -93,6 +95,11 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, input RegisterInput) (*R
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Canonicalizar el correo al entrar: se guarda y se busca siempre en
+	// minúsculas, así "Ana@X.com" y "ana@x.com" son la misma cuenta también
+	// para las comparaciones en Go (la collation de MySQL ya los igualaba).
+	input.Email = normalizeEmail(input.Email)
 
 	uc.logger.WithFields(logrus.Fields{
 		"email":  maskEmail(input.Email),

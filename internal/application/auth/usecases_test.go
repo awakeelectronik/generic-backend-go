@@ -86,7 +86,7 @@ func TestCheckAvailability_dbErrorFailsClosed(t *testing.T) {
 // --- Login ---
 
 func loginUC(repo *fakeUserRepo) *LoginUseCase {
-	return NewLoginUseCase(repo, fakeHasher{}, &fakeTokenProvider{}, silentLogger())
+	return NewLoginUseCase(repo, fakeHasher{}, &fakeTokenProvider{}, nil, silentLogger())
 }
 
 func verifiedUser() *fakeUserRepo {
@@ -141,7 +141,7 @@ func (h *countingHasher) Compare(hash, password string) error {
 // whether the account exists.
 func TestLogin_userNotFoundStillComparesPassword(t *testing.T) {
 	h := &countingHasher{}
-	uc := NewLoginUseCase(&fakeUserRepo{}, h, &fakeTokenProvider{}, silentLogger())
+	uc := NewLoginUseCase(&fakeUserRepo{}, h, &fakeTokenProvider{}, nil, silentLogger())
 	// Reset: the constructor calls Hash, not Compare, so the counter starts at 0.
 	h.compares = 0
 

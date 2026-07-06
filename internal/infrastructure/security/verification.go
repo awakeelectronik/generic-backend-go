@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
+	"github.com/awakeelectronik/generic-backend-go/pkg/logmask"
 	"github.com/sirupsen/logrus"
 )
 
@@ -136,14 +137,14 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 			if err := vs.emailSender.Send(destination, subject, body); err != nil {
 				vs.logger.WithError(err).WithFields(logrus.Fields{
 					"user_id":     userID,
-					"destination": destination,
+					"destination": logmask.Destination(destination),
 				}).Error("Failed to send verification email")
-				sendErrs = append(sendErrs, fmt.Errorf("error enviando código de verificación a %s: %w", destination, err))
+				sendErrs = append(sendErrs, fmt.Errorf("error enviando código de verificación a %s: %w", logmask.Destination(destination), err))
 				continue
 			}
 			vs.logger.WithFields(logrus.Fields{
 				"user_id":     userID,
-				"destination": destination,
+				"destination": logmask.Destination(destination),
 			}).Info("Verification email sent")
 			continue
 		}
@@ -151,7 +152,7 @@ func (vs *VerificationService) SendVerificationCodeToDestinations(userID string,
 		// en desarrollo; en producción se registra el hecho sin el secreto.
 		fields := logrus.Fields{
 			"user_id":     userID,
-			"destination": destination,
+			"destination": logmask.Destination(destination),
 		}
 		if vs.devLogCodes {
 			fields["code"] = code

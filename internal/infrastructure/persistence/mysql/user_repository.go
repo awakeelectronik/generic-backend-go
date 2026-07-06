@@ -21,8 +21,8 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 	query := `
-		INSERT INTO users (id, email, password, name, phone, verified, token_version, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, email, password, name, phone, role, verified, token_version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	// Convert empty strings to NULL for optional fields
@@ -36,12 +36,24 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 		phone = sql.NullString{String: user.Phone, Valid: true}
 	}
 
+	role := user.Role
+	if role == "" {
+		role = domain.RoleUser
+	}
+
 	_, err := execContextFrom(ctx, r.db).ExecContext(ctx, query,
-		user.ID, email, user.Password, user.Name, phone,
+		user.ID, email, user.Password, user.Name, phone, role,
 		user.Verified, user.TokenVersion, user.CreatedAt, user.UpdatedAt,
 	)
 
 	if err != nil {
+		// El pre-check de duplicados corre fuera de la tx: dos registros
+		// simultáneos pueden llegar ambos al INSERT y uno choca con el UNIQUE
+		// (error 1062). Eso es un conflicto del cliente (409), no un 500.
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "duplicate entry") || strings.Contains(msg, "error 1062") {
+			return appErrors.NewConflictError("El correo o teléfono")
+		}
 		return appErrors.NewAppErrorWithInternal("DB_ERROR", "Error creating user", 500, err)
 	}
 
@@ -50,7 +62,7 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, role, verified, token_version, created_at, updated_at, deleted_at
 		FROM users WHERE id = ? AND deleted_at IS NULL
 	`
 
@@ -60,7 +72,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 	var phone sql.NullString
 
 	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, id).Scan(
-		&user.ID, &email, &user.Password, &user.Name, &phone,
+		&user.ID, &email, &user.Password, &user.Name, &phone, &user.Role,
 		&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -88,7 +100,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, role, verified, token_version, created_at, updated_at, deleted_at
 		FROM users WHERE email = ? AND deleted_at IS NULL
 	`
 
@@ -98,7 +110,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 	var phone sql.NullString
 
 	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, email).Scan(
-		&user.ID, &emailNull, &user.Password, &user.Name, &phone,
+		&user.ID, &emailNull, &user.Password, &user.Name, &phone, &user.Role,
 		&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -126,7 +138,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 
 func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, role, verified, token_version, created_at, updated_at, deleted_at
 		FROM users WHERE phone = ? AND deleted_at IS NULL
 	`
 
@@ -136,7 +148,7 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phoneQuery string) (*do
 	var phone sql.NullString
 
 	err := dbFrom(ctx, r.db).QueryRowContext(ctx, query, phoneQuery).Scan(
-		&user.ID, &email, &user.Password, &user.Name, &phone,
+		&user.ID, &email, &user.Password, &user.Name, &phone, &user.Role,
 		&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 	)
 
@@ -306,7 +318,7 @@ func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int,
 	}
 
 	listQuery := fmt.Sprintf(`
-		SELECT id, email, password, name, phone, verified, token_version, created_at, updated_at, deleted_at
+		SELECT id, email, password, name, phone, role, verified, token_version, created_at, updated_at, deleted_at
 		FROM users
 		%s
 		ORDER BY created_at DESC
@@ -326,7 +338,7 @@ func (r *UserRepository) ListWithSummary(ctx context.Context, limit, offset int,
 		var email sql.NullString
 		var phone sql.NullString
 		if err := rows.Scan(
-			&user.ID, &email, &user.Password, &user.Name, &phone,
+			&user.ID, &email, &user.Password, &user.Name, &phone, &user.Role,
 			&user.Verified, &user.TokenVersion, &user.CreatedAt, &user.UpdatedAt, &deletedAt,
 		); err != nil {
 			return nil, 0, 0, 0, appErrors.NewAppErrorWithInternal("DB_ERROR", "Error scanning user", 500, err)

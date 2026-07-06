@@ -27,6 +27,14 @@ func SecurityHeadersMiddleware(hstsEnabled bool) gin.HandlerFunc {
 		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
+		// La API no usa APIs de dispositivo; negarlas explícitamente evita que
+		// cualquier respuesta renderizada las herede habilitadas.
+		h.Set("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+		// Bloquea embeber respuestas de la API en modo no-CORS desde otro origen
+		// (<img src=...>, etc.); los fetch CORS legítimos no se ven afectados.
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		// Flash/PDF legacy: sin políticas cross-domain.
+		h.Set("X-Permitted-Cross-Domain-Policies", "none")
 		if hstsEnabled {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}

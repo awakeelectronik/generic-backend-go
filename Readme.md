@@ -37,15 +37,21 @@ make run
 | `MAX_BODY_SIZE` | `1048576` (1 MiB) | Tope global del body para rutas JSON (mín. 1024). `/documents/upload` queda exenta: usa `MAX_FILE_SIZE` + holgura multipart. |
 | `HSTS_ENABLED` | `false` | `true` emite `Strict-Transport-Security` (1 año, includeSubDomains). Activar solo cuando la app se sirve por HTTPS. |
 | `BCRYPT_COST` | `12` | Work factor de bcrypt (rango válido 10–15). Cada +1 duplica el costo de hash/compare (afecta latencia de login y registro). |
+| `RATE_LIMIT_FAIL_CLOSED` | `false` | Política ante Redis caído. `false` = fail-open (se sirve sin límite; disponibilidad). `true` = fail-closed (429 a todo; integridad — recomendado en fintech). Solo aplica con `REDIS_URL`. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | `` (vacío) | Rutas de cert y key para HTTPS nativo (`ListenAndServeTLS`). Ambos o ninguno. Vacío = HTTP plano (TLS termina en el proxy). |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | — | |
+| `DB_TLS` | `` (vacío) | TLS hacia MySQL: `""` (sin TLS, BD local), `preferred`, `true` (verificado) o `skip-verify`. Usar `true` cuando la BD no comparte host con la app. |
 | `DB_MAX_CONN` | `25` | |
 | `DB_IDLE_CONN` | `5` | |
 | `JWT_SECRET` | — (obligatorio) | mín. 32 bytes; el arranque falla si es más corto |
-| `JWT_EXPIRATION` | `24` (horas) | access token |
+| `JWT_SECRET_PREVIOUS` | `` (vacío) | Secreto anterior durante una rotación de `JWT_SECRET`: los tokens ya emitidos siguen validando mientras esté puesto; lo nuevo se firma con el vigente. Retirarlo al terminar la rotación. Mín. 32 bytes y distinto de `JWT_SECRET`. |
+| `JWT_EXPIRATION` | `1` (hora) | access token corto: un token robado vale poco. La sesión larga vive en el refresh (rotado en cada uso). |
 | `JWT_REFRESH` | `8760` (horas, 1 año) | refresh rota en cada uso |
 | `STORAGE_PATH` | `./uploads` | |
 | `MAX_FILE_SIZE` | `5242880` (5 MiB) | |
-| `REDIS_URL` | `` (vacío) | `redis://...` activa store **compartido y restart-safe** para rate-limit y códigos de verificación (necesario al correr varias instancias). Vacío = store **in-memory**: válido para una sola instancia, se pierde al reiniciar y no se comparte entre réplicas. |
+| `MAX_DOCS_PER_USER` | `200` | Cuota de documentos por cuenta (evita llenar disco). `0` = sin límite. |
+| `STORAGE_ENC_KEY` | `` (vacío) | Clave hex de 64 chars (32 bytes) para cifrado at-rest AES-256-GCM de los archivos subidos. Generar con `openssl rand -hex 32`. Vacío = sin cifrado. Los archivos previos a activarlo se siguen sirviendo. |
+| `REDIS_URL` | `` (vacío) | `redis://...` activa store **compartido y restart-safe** para rate-limit, códigos de verificación y lockout de login (necesario al correr varias instancias). Vacío = store **in-memory**: válido para una sola instancia, se pierde al reiniciar y no se comparte entre réplicas. |
 
 ### Branding (parametriza cada clonación)
 
@@ -91,7 +97,7 @@ requieren `Authorization: Bearer <token>`.
 | Método | Ruta | Notas |
 |---|---|---|
 | POST | `/auth/register` | acepta `email` y/o `phone`; `referral_code` opcional o requerido según `REQUIRE_REFERRAL` |
-| POST | `/auth/login` | si el usuario no está verificado responde 403 con `data: { user_id, email }` |
+| POST | `/auth/login` | si el usuario no está verificado responde 403 con `data: { user_id, email }`. Lockout por cuenta: 429 tras 10 fallos en 15 min |
 | POST | `/auth/refresh` | rota el refresh token y revisa `token_version` |
 | POST | `/auth/check-availability` | rate-limited 10/min |
 | POST | `/auth/check-referral` | rate-limited 10/min |
@@ -105,6 +111,7 @@ requieren `Authorization: Bearer <token>`.
 | Método | Ruta | Notas |
 |---|---|---|
 | POST | `/auth/change-password` | bumpea `token_version`; devuelve nuevos tokens |
+| POST | `/auth/logout` | revocación real: bumpea `token_version`, invalida todos los tokens (access y refresh) |
 
 ### Users (protegidas)
 
@@ -124,9 +131,14 @@ requieren `Authorization: Bearer <token>`.
 
 ### Admin (protegidas + AdminChecker)
 
+Gate por **rol persistido** (`users.role == 'admin'`, asignado solo por el seed;
+nunca por la API pública), con fallback legacy por email+teléfono para bases
+previas a la columna `role`.
+
 | Método | Ruta |
 |---|---|
 | GET | `/admin/users` (paginado, `q`, summary global) |
+| GET | `/admin/audit-logs` (paginado; trail de toda mutación con status, IP y request_id) |
 
 ### Health
 

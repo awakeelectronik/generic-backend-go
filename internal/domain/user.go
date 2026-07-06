@@ -14,17 +14,30 @@ var (
 	ErrUserEmptyPassword  = errors.New("user password is required")
 )
 
+// Roles de usuario. El rol NUNCA es asignable desde la API pública: se fija en
+// registro (user) o en el seed del admin; los endpoints de perfil no lo tocan.
+const (
+	RoleUser  = "user"
+	RoleAdmin = "admin"
+)
+
 type User struct {
 	ID           string
 	Email        string
 	Password     string
 	Name         string
 	Phone        string
+	Role         string
 	Verified     bool
 	TokenVersion int
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	DeletedAt    *time.Time
+}
+
+// IsAdmin indica si el usuario tiene rol de administrador.
+func (u *User) IsAdmin() bool {
+	return u.Role == RoleAdmin
 }
 
 // NewUser builds a User and rejects any obviously invalid combination. The
@@ -51,6 +64,7 @@ func NewUser(email, password, name, phone string) (*User, error) {
 		Password:     password,
 		Name:         name,
 		Phone:        phone,
+		Role:         RoleUser,
 		Verified:     false,
 		TokenVersion: 1,
 		CreatedAt:    now,

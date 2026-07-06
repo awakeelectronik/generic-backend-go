@@ -22,8 +22,12 @@ type UploadDocumentUseCase struct {
 	documentRepo application.DocumentRepository
 	fileStorage  application.FileStorage
 	maxFileSize  int64
-	allowedMimes []string
-	logger       *logrus.Logger
+	// maxDocsPerUser acota cuántos documentos puede acumular una cuenta. Sin
+	// cuota, una sola cuenta puede llenar el disco a base de subir archivos
+	// válidos (20/min × 5 MiB = 100 MiB/min). 0 = sin límite.
+	maxDocsPerUser int
+	allowedMimes   []string
+	logger         *logrus.Logger
 }
 
 // NewUploadDocumentUseCase wires the upload flow.
@@ -34,6 +38,7 @@ func NewUploadDocumentUseCase(
 	documentRepo application.DocumentRepository,
 	fileStorage application.FileStorage,
 	maxFileSize int64,
+	maxDocsPerUser int,
 	allowedMimes []string,
 	logger *logrus.Logger,
 ) *UploadDocumentUseCase {
@@ -45,11 +50,12 @@ func NewUploadDocumentUseCase(
 		}
 	}
 	return &UploadDocumentUseCase{
-		documentRepo: documentRepo,
-		fileStorage:  fileStorage,
-		maxFileSize:  maxFileSize,
-		allowedMimes: normalized,
-		logger:       logger,
+		documentRepo:   documentRepo,
+		fileStorage:    fileStorage,
+		maxFileSize:    maxFileSize,
+		maxDocsPerUser: maxDocsPerUser,
+		allowedMimes:   normalized,
+		logger:         logger,
 	}
 }
 
@@ -83,6 +89,24 @@ func (u *UploadDocumentUseCase) Execute(
 			"El archivo excede el tamaño máximo permitido",
 			413,
 		)
+	}
+
+	// Cuota por usuario ANTES de tocar disco. Chequeo no atómico (dos subidas
+	// simultáneas pueden colarse en count == cuota-1): aceptable, la cuota es
+	// un tope de abuso, no un contador contable.
+	if u.maxDocsPerUser > 0 {
+		count, err := u.documentRepo.CountByUserID(ctx, userID)
+		if err != nil {
+			u.logger.WithError(err).Error("Failed to check document quota")
+			return nil, apperrors.NewAppErrorWithInternal("DB_ERROR", "Error verificando cuota de documentos", 500, err)
+		}
+		if count >= u.maxDocsPerUser {
+			return nil, apperrors.NewAppError(
+				"DOCUMENT_QUOTA_EXCEEDED",
+				"Alcanzaste el número máximo de documentos permitidos",
+				409,
+			)
+		}
 	}
 
 	// Leemos los primeros bytes para inferir el MIME real. ReadFull tolera

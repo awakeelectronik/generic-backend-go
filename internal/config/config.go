@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -93,6 +94,16 @@ type ServerConfig struct {
 	// HSTSEnabled emite Strict-Transport-Security (env HSTS_ENABLED). Activarlo
 	// solo cuando la app se sirve por HTTPS (directo o detrás del proxy TLS).
 	HSTSEnabled bool
+	// TLSCertFile/TLSKeyFile (env TLS_CERT_FILE / TLS_KEY_FILE) activan HTTPS
+	// nativo (ListenAndServeTLS). Vacíos = HTTP plano (TLS termina en el proxy).
+	// Deben configurarse ambos o ninguno.
+	TLSCertFile string
+	TLSKeyFile  string
+	// RateLimitFailClosed (env RATE_LIMIT_FAIL_CLOSED) invierte la política ante
+	// un Redis caído: por defecto el rate-limit falla ABIERTO (se sirve la
+	// petición sin límite — disponibilidad). true = falla CERRADO (429 para
+	// todo — integridad), preferible en despliegues fintech.
+	RateLimitFailClosed bool
 }
 
 type DatabaseConfig struct {
@@ -101,22 +112,37 @@ type DatabaseConfig struct {
 	User     string
 	Password string
 	Name     string
+	// TLSMode (env DB_TLS) controla TLS hacia MySQL: "" (sin TLS, BD local),
+	// "preferred", "true" (verificado) o "skip-verify". Usar "true" cuando la
+	// BD no comparte host con la app.
+	TLSMode  string
 	MaxConn  int
 	IdleConn int
 	MaxLife  time.Duration
 }
 
 type JWTConfig struct {
-	Secret          string
+	Secret string
+	// PreviousSecret (env JWT_SECRET_PREVIOUS) habilita rotar JWT_SECRET sin
+	// invalidar de golpe las sesiones vivas: lo nuevo se firma con Secret, lo
+	// viejo sigue validando durante la ventana de rotación. Retirarlo al
+	// terminar la rotación.
+	PreviousSecret  string
 	ExpirationHours int
 	RefreshHours    int
 	IssuerName      string
 }
 
 type StorageConfig struct {
-	Type         string
-	LocalPath    string
-	MaxFileSize  int64
+	Type        string
+	LocalPath   string
+	MaxFileSize int64
+	// MaxDocsPerUser (env MAX_DOCS_PER_USER) acota los documentos por cuenta
+	// para que una sola cuenta no llene el disco. 0 = sin límite.
+	MaxDocsPerUser int
+	// EncKey son los 32 bytes de STORAGE_ENC_KEY (hex, 64 chars) para cifrado
+	// at-rest AES-256-GCM de los archivos subidos. nil = sin cifrado.
+	EncKey       []byte
 	AllowedMimes []string
 }
 
@@ -131,8 +157,11 @@ func Load() (*Config, error) {
 			AllowedOrigins: getEnvCSV("CORS_ALLOWED_ORIGINS", []string{"*"}),
 			// Default nil = no se confía en ningún proxy (IP = socket directo).
 			TrustedProxies: getEnvCSV("TRUSTED_PROXIES", nil),
-			MaxBodyBytes:   int64(getEnvInt("MAX_BODY_SIZE", 1<<20)),
-			HSTSEnabled:    getEnvBool("HSTS_ENABLED", false),
+			MaxBodyBytes:        int64(getEnvInt("MAX_BODY_SIZE", 1<<20)),
+			HSTSEnabled:         getEnvBool("HSTS_ENABLED", false),
+			TLSCertFile:         getEnv("TLS_CERT_FILE", ""),
+			TLSKeyFile:          getEnv("TLS_KEY_FILE", ""),
+			RateLimitFailClosed: getEnvBool("RATE_LIMIT_FAIL_CLOSED", false),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -140,13 +169,18 @@ func Load() (*Config, error) {
 			User:     getEnv("DB_USER", "root"),
 			Password: getEnv("DB_PASSWORD", ""),
 			Name:     getEnv("DB_NAME", "identity_db"),
+			TLSMode:  getEnv("DB_TLS", ""),
 			MaxConn:  getEnvInt("DB_MAX_CONN", 25),
 			IdleConn: getEnvInt("DB_IDLE_CONN", 5),
 			MaxLife:  time.Hour,
 		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", ""),
-			ExpirationHours: getEnvInt("JWT_EXPIRATION", 24),
+			Secret:         getEnv("JWT_SECRET", ""),
+			PreviousSecret: getEnv("JWT_SECRET_PREVIOUS", ""),
+			// Default 1h: un access robado vale poco tiempo. La sesión larga
+			// vive en el refresh (rotado en cada uso); los clientes deben
+			// refrescar al recibir 401. Subirlo es decisión por despliegue.
+			ExpirationHours: getEnvInt("JWT_EXPIRATION", 1),
 			// 8760h = 1 año. Como /auth/refresh rota el refresh en cada uso,
 			// la sesión se mantiene viva mientras el usuario abra la app
 			// al menos una vez al año.
@@ -154,10 +188,11 @@ func Load() (*Config, error) {
 			IssuerName:   "identity-api",
 		},
 		Storage: StorageConfig{
-			Type:         "local",
-			LocalPath:    getEnv("STORAGE_PATH", "./uploads"),
-			MaxFileSize:  int64(getEnvInt("MAX_FILE_SIZE", 5*1024*1024)),
-			AllowedMimes: []string{"image/jpeg", "image/jpg"},
+			Type:           "local",
+			LocalPath:      getEnv("STORAGE_PATH", "./uploads"),
+			MaxFileSize:    int64(getEnvInt("MAX_FILE_SIZE", 5*1024*1024)),
+			MaxDocsPerUser: getEnvInt("MAX_DOCS_PER_USER", 200),
+			AllowedMimes:   []string{"image/jpeg", "image/jpg"},
 		},
 		Email: EmailConfig{
 			From: getEnv("SMTP_FROM", "noreply@app.local"),
@@ -202,6 +237,37 @@ func Load() (*Config, error) {
 	}
 	if cfg.Server.MaxBodyBytes < 1024 {
 		return nil, fmt.Errorf("MAX_BODY_SIZE too small: need at least 1024 bytes, got %d", cfg.Server.MaxBodyBytes)
+	}
+
+	// El secreto anterior (rotación) exige el mismo mínimo que el vigente: un
+	// previo débil seguiría validando tokens forjables durante la ventana.
+	if cfg.JWT.PreviousSecret != "" {
+		if len(cfg.JWT.PreviousSecret) < minJWTSecretBytes {
+			return nil, fmt.Errorf("JWT_SECRET_PREVIOUS too weak: need at least %d bytes", minJWTSecretBytes)
+		}
+		if cfg.JWT.PreviousSecret == cfg.JWT.Secret {
+			return nil, fmt.Errorf("JWT_SECRET_PREVIOUS must differ from JWT_SECRET (rotation finished? unset it)")
+		}
+	}
+
+	// TLS nativo: cert y key van juntos; uno solo es un despliegue a medias.
+	if (cfg.Server.TLSCertFile == "") != (cfg.Server.TLSKeyFile == "") {
+		return nil, fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
+	}
+
+	switch cfg.Database.TLSMode {
+	case "", "true", "preferred", "skip-verify":
+	default:
+		return nil, fmt.Errorf("DB_TLS invalid: use \"\", \"true\", \"preferred\" or \"skip-verify\", got %q", cfg.Database.TLSMode)
+	}
+
+	// Clave de cifrado at-rest: hex de 64 chars → 32 bytes exactos (AES-256).
+	if raw := strings.TrimSpace(os.Getenv("STORAGE_ENC_KEY")); raw != "" {
+		key, err := hex.DecodeString(raw)
+		if err != nil || len(key) != 32 {
+			return nil, fmt.Errorf("STORAGE_ENC_KEY invalid: need 64 hex chars (32 bytes), e.g. `openssl rand -hex 32`")
+		}
+		cfg.Storage.EncKey = key
 	}
 
 	return cfg, nil

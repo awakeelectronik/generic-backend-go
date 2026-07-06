@@ -22,7 +22,10 @@ type DatabaseConfig struct {
 	MaxLife  time.Duration
 }
 
-func NewConnection(user, password, host, port, name string, maxConn, idleConn int, maxLife time.Duration) (*sql.DB, error) {
+// NewConnection abre el pool MySQL. tlsMode ("", "true", "preferred",
+// "skip-verify") se traduce al parámetro tls= del driver: sin él, las
+// credenciales y los datos viajan en claro — solo aceptable con BD local.
+func NewConnection(user, password, host, port, name, tlsMode string, maxConn, idleConn int, maxLife time.Duration) (*sql.DB, error) {
 	dsn := fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/%s?parseTime=true",
 		user,
@@ -31,6 +34,9 @@ func NewConnection(user, password, host, port, name string, maxConn, idleConn in
 		port,
 		name,
 	)
+	if tlsMode != "" {
+		dsn += "&tls=" + tlsMode
+	}
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -56,6 +62,7 @@ func RunMigrations(db *sql.DB) error {
 			password VARCHAR(255) NOT NULL,
 			name VARCHAR(255) NOT NULL,
 			phone VARCHAR(20),
+			role VARCHAR(20) NOT NULL DEFAULT 'user',
 			verified BOOLEAN DEFAULT false,
 			token_version INT NOT NULL DEFAULT 1,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -133,8 +140,25 @@ func RunMigrations(db *sql.DB) error {
 	if err := ensureUsersPhoneUnique(db); err != nil {
 		return err
 	}
+	if err := ensureUsersRoleColumn(db); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+// ensureUsersRoleColumn adds users.role on existing DBs (RBAC-lite). Idempotent.
+// El backfill del rol admin lo hace SeedAdminUser sobre el usuario configurado.
+func ensureUsersRoleColumn(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'`)
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "duplicate") || strings.Contains(msg, "1060") {
+		return nil
+	}
+	return fmt.Errorf("ensure users.role: %w", err)
 }
 
 // ensureUsersTokenVersionColumn adds users.token_version on existing DBs. Idempotent.

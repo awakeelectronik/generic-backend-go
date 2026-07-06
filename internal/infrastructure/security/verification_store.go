@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"crypto/subtle"
 	"sync"
 	"time"
 
@@ -144,7 +145,10 @@ func (s *memoryVerificationStore) VerifyCode(_ context.Context, userID, code str
 		stored.Used = true
 		return appErrors.ErrVerificationCodeAttemptsExceeded
 	}
-	if stored.Code != code {
+	// Comparación constant-time: con != un atacante que mida tiempos podría en
+	// teoría adivinar el código dígito a dígito. El límite de 5 intentos ya lo
+	// hace impracticable; esto elimina el canal por completo (checklist OWASP).
+	if subtle.ConstantTimeCompare([]byte(stored.Code), []byte(code)) != 1 {
 		stored.Attempts++
 		if stored.Attempts >= s.policy.MaxAttempts {
 			stored.Used = true

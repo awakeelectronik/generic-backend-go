@@ -21,7 +21,7 @@ func newTestRedisRateStore(t *testing.T) (RateStore, *miniredis.Miniredis) {
 	t.Cleanup(func() { _ = client.Close() })
 	logger := logrus.New()
 	logger.SetLevel(logrus.PanicLevel)
-	return NewRedisRateStore(client, logger), mr
+	return NewRedisRateStore(client, false, logger), mr
 }
 
 func TestRedisRateStore_allowsUpToRateThenBlocks(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"github.com/awakeelectronik/generic-backend-go/internal/application"
 	"github.com/awakeelectronik/generic-backend-go/internal/domain"
 	appErrors "github.com/awakeelectronik/generic-backend-go/pkg/errors"
+	"github.com/awakeelectronik/generic-backend-go/pkg/logmask"
 )
 
 // issueTokenPair genera el par access+refresh para un usuario en una versión de
@@ -53,29 +54,19 @@ func userDestinations(u *domain.User) []string {
 	return dests
 }
 
-// maskEmail reduce un correo a primera letra + dominio para logs. Los logs se
-// replican a sistemas con menos control de acceso que la BD; el contacto
-// completo de un usuario no debe viajar ahí (PII).
-func maskEmail(email string) string {
-	if email == "" {
-		return ""
-	}
-	at := strings.Index(email, "@")
-	if at <= 0 {
-		return "***"
-	}
-	return email[:1] + "***" + email[at:]
-}
+// maskEmail / maskPhone delegan en pkg/logmask (compartido con el servicio de
+// verificación) para que TODO el proyecto enmascare PII igual en logs.
+func maskEmail(email string) string { return logmask.Email(email) }
 
-// maskPhone deja visibles solo los últimos 4 dígitos.
-func maskPhone(phone string) string {
-	if phone == "" {
-		return ""
-	}
-	if len(phone) <= 4 {
-		return "****"
-	}
-	return strings.Repeat("*", len(phone)-4) + phone[len(phone)-4:]
+func maskPhone(phone string) string { return logmask.Phone(phone) }
+
+// normalizeEmail canonicaliza un correo para almacenamiento y búsqueda:
+// trim + minúsculas. Sin esto, "Ana@X.com" y "ana@x.com" son strings distintos
+// en Go aunque la collation de MySQL los trate igual, lo que produce
+// comparaciones inconsistentes (p. ej. en el AdminChecker o en pre-checks de
+// duplicados).
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // SessionOutput is the authenticated-session payload returned by every flow that
