@@ -31,6 +31,13 @@ func (r ResetPasswordInput) Validate() error {
 	return nil
 }
 
+// errResetInvalid es la única respuesta de fallo de reset-password. Mensaje y
+// código estables e independientes del estado real, para no filtrar existencia
+// de cuenta ni de código pendiente.
+func errResetInvalid() *appErrors.AppError {
+	return appErrors.NewAppError("RESET_INVALID", "El código es inválido o ha expirado. Solicita uno nuevo.", 400)
+}
+
 type ResetPasswordUseCase struct {
 	userRepo        application.UserRepository
 	passwordHasher  application.PasswordHasher
@@ -65,17 +72,22 @@ func (uc *ResetPasswordUseCase) Execute(ctx context.Context, input ResetPassword
 		uc.logger.WithError(err).Error("Failed to fetch user for password reset")
 		return nil, err
 	}
+
+	// Anti-enumeración robusta: TODOS los fallos de reset —cuenta inexistente,
+	// sin código pendiente, código incorrecto, expirado o usado— colapsan en una
+	// ÚNICA respuesta genérica. Devolver errores distintos (NotFound vs Invalid)
+	// reabría la enumeración: un atacante primea el estado "con código" con un
+	// forgot-password previo y distingue cuenta real de inexistente por el
+	// mensaje. Un reset endpoint no necesita decir POR QUÉ falló; el usuario
+	// legítimo con el código correcto igual pasa.
 	if user == nil {
-		// Anti-enumeración: un 404 aquí revelaría qué correos/teléfonos tienen
-		// cuenta, contradiciendo el mensaje genérico de forgot-password. Se
-		// responde exactamente igual que una cuenta real SIN código pendiente
-		// (el estado en que está cualquier cuenta que no pidió reset), así ambos
-		// casos son indistinguibles para quien sondea.
-		return nil, appErrors.ErrVerificationCodeNotFound
+		uc.logger.Warn("Reset password: unknown account (respuesta genérica)")
+		return nil, errResetInvalid()
 	}
 
 	if err := uc.verificationSvc.VerifyCode(user.ID, input.Code); err != nil {
-		return nil, err
+		uc.logger.WithError(err).WithField("user_id", user.ID).Warn("Reset password: code check failed (respuesta genérica)")
+		return nil, errResetInvalid()
 	}
 
 	newHash, err := uc.passwordHasher.Hash(input.NewPassword)

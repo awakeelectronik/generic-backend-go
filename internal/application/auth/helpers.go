@@ -69,6 +69,19 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+// loginThrottleKey deriva la clave de lockout del IDENTIFICADOR presentado (no
+// del user.ID), para que un identificador inexistente se pueda bloquear igual
+// que uno real. Si se contara el fallo solo cuando el usuario existe, el 429 de
+// lockout sería un oráculo de enumeración (429 ⇒ la cuenta existe). Prefiere el
+// email (normalizado) igual que findUserByEmailOrPhone; si no hay, usa el
+// teléfono. Validate ya garantiza que al menos uno viene informado.
+func loginThrottleKey(email, phone string) string {
+	if e := normalizeEmail(email); e != "" {
+		return "login:email:" + e
+	}
+	return "login:phone:" + strings.TrimSpace(phone)
+}
+
 // SessionOutput is the authenticated-session payload returned by every flow that
 // logs a user in: login, verify-code, and password change/reset. They all return
 // the same shape, so they share one type instead of four identical structs.

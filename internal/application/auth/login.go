@@ -75,26 +75,19 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*Session
 	}
 
 	input.Email = normalizeEmail(input.Email)
+	// Clave de lockout derivada del identificador, NO del user.ID: así el
+	// bloqueo (y su 429) es idéntico exista o no la cuenta. Ver loginThrottleKey.
+	throttleKey := loginThrottleKey(input.Email, input.Phone)
 
 	uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Info("Login attempt")
 
-	// Find user by email or phone (email preferred).
-	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
-	if err != nil || user == nil {
-		// Comparamos contra el hash dummy aunque no haya usuario: igualamos el
-		// coste bcrypt para no filtrar por timing si la cuenta existe o no.
-		_ = uc.passwordHasher.Compare(uc.dummyHash, input.Password)
-		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: user not found")
-		return nil, appErrors.ErrUnauthorized
-	}
-
-	// Lockout por cuenta ANTES de gastar bcrypt: si está bloqueada, ni siquiera
-	// evaluamos la contraseña (un atacante bloqueado no obtiene señal de si
-	// acertó). El 429 es deliberadamente distinguible: el dueño legítimo debe
-	// saber que su cuenta está bajo ataque / bloqueada, no ver "credenciales
-	// inválidas" con la contraseña correcta.
-	if uc.throttle != nil && uc.throttle.IsLocked(ctx, user.ID) {
-		uc.logger.WithField("user_id", user.ID).Warn("Login blocked: account locked by failed attempts")
+	// Lockout ANTES de resolver si la cuenta existe y ANTES de gastar bcrypt.
+	// Como la clave es el identificador presentado, un email inexistente también
+	// se bloquea tras N fallos y devuelve el MISMO 429 que uno real: el 429 deja
+	// de ser un oráculo de enumeración. Un atacante bloqueado tampoco obtiene
+	// señal de si acertó la contraseña.
+	if uc.throttle != nil && uc.throttle.IsLocked(ctx, throttleKey) {
+		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login blocked: identifier locked by failed attempts")
 		return nil, appErrors.NewAppError(
 			"LOGIN_LOCKED",
 			"Demasiados intentos fallidos. Intenta de nuevo en unos minutos.",
@@ -102,18 +95,33 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*Session
 		)
 	}
 
+	// Find user by email or phone (email preferred).
+	user, err := findUserByEmailOrPhone(ctx, uc.userRepo, input.Email, input.Phone)
+	if err != nil || user == nil {
+		// Comparamos contra el hash dummy aunque no haya usuario: igualamos el
+		// coste bcrypt para no filtrar por timing si la cuenta existe o no.
+		_ = uc.passwordHasher.Compare(uc.dummyHash, input.Password)
+		// Y contamos el fallo bajo la MISMA clave que un usuario real, para que el
+		// identificador inexistente escale hacia el mismo lockout/429.
+		if uc.throttle != nil {
+			uc.throttle.RegisterFailure(ctx, throttleKey)
+		}
+		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: user not found")
+		return nil, appErrors.ErrUnauthorized
+	}
+
 	// Verify password
 	if err := uc.passwordHasher.Compare(user.Password, input.Password); err != nil {
 		if uc.throttle != nil {
-			uc.throttle.RegisterFailure(ctx, user.ID)
+			uc.throttle.RegisterFailure(ctx, throttleKey)
 		}
 		uc.logger.WithFields(logrus.Fields{"email": maskEmail(input.Email), "phone": maskPhone(input.Phone)}).Warn("Login failed: invalid password")
 		return nil, appErrors.ErrUnauthorized
 	}
 
-	// Contraseña correcta: se limpia el contador de fallos de la cuenta.
+	// Contraseña correcta: se limpia el contador de fallos del identificador.
 	if uc.throttle != nil {
-		uc.throttle.Reset(ctx, user.ID)
+		uc.throttle.Reset(ctx, throttleKey)
 	}
 
 	// Check if user is verified
